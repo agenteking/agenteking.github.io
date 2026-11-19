@@ -2,6 +2,7 @@
 # Arma el sitio estático de GitHub Pages en _site/ (o en $OUT_DIR):
 #   landing/             → /            (base "/")
 #   landings/<carpeta>/  → /<carpeta>/  (base "/<carpeta>/"), una por cada carpeta con package.json
+# backoffice/ NO se incluye nunca (es interno, con login y datos reales): no lo agregues acá.
 # Todo se buildea en modo demo estática (VITE_STATIC_DEMO=1): sin backend, sin /api.
 # Las VITE_* de la landing (marca, contacto, precios…) se toman del entorno (ver .github/workflows/pages.yml).
 #

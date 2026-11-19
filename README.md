@@ -4,6 +4,7 @@
 |---|---|
 | `landing/` | Nuestra landing (marca provisoria **Aparece**) |
 | `landings/<cliente>/` | Una carpeta por cada landing que hacemos para un comercio (muestras y clientes) |
+| `backoffice/` | Back office interno de leads (clientes potenciales). **No se publica en GitHub Pages**: corre en la máquina del agente detrás de login + túnel de Cloudflare (`backoffice/scripts/start.sh`). Usa la base de leads del agente (fuera de este repo) |
 
 Cada proyecto es independiente (su `package.json`, `.env`, base SQLite). Ver el README de cada carpeta.
 
