@@ -11,14 +11,15 @@
     "dev": "concurrently -k -n api,web -c magenta,cyan \"tsx watch server/src/index.ts\" \"vite --config web/vite.config.ts\"",
     "build": "prisma generate && npm run build:web && tsc -p server/tsconfig.json",
     "build:web": "vite build --config web/vite.config.ts && vite build --config web/vite.config.ts --ssr src/entry-server.tsx --outDir ../dist/ssr --emptyOutDir && node scripts/prerender.mjs",
-    "start": "prisma migrate deploy && node dist/server/index.js",
-    "lint": "oxlint server/src web/src prisma scripts --ignore-pattern \"**/generated/**\"",
+    "start": "prisma migrate deploy && node dist/server/server/src/index.js",
+    "lint": "oxlint server/src web/src shared prisma scripts tests --ignore-pattern \"**/generated/**\"",
     "typecheck": "prisma generate && tsc -p server/tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
     "setup": "prisma migrate deploy && prisma generate && prisma db seed",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
-    "db:generate": "prisma generate"
+    "db:generate": "prisma generate",
+    "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@fontsource-variable/fraunces": "^5.3.0",

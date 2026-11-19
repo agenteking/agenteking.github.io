@@ -21,6 +21,8 @@ model Service {
   priceFrom     Int
   sortOrder     Int            @default(0)
   active        Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @default(now()) @updatedAt
   professionals Professional[]
   bookings      Booking[]
 }
@@ -28,7 +30,12 @@ model Service {
 model Professional {
   id        String    @id
   name      String
-  specialty String
+  specialty String    @default("")
+  /// Inactiva: no aparece en el sitio ni recibe turnos online (sus turnos quedan).
+  active    Boolean   @default(true)
+  sortOrder Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @default(now()) @updatedAt
   services  Service[]
   bookings  Booking[]
 }
@@ -53,9 +60,29 @@ model Booking {
   customerPhone  String
   customerEmail  String
   status         String       @default("confirmed") // confirmed | cancelled
+  /// online (la clienta desde el sitio) | admin (carga manual desde el panel)
+  source         String       @default("online")
+  notes          String       @default("")
   createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @default(now()) @updatedAt
   cancelledAt    DateTime?
+  events         BookingEvent[]
 
   @@index([professionalId, start])
   @@index([start])
+}
+
+/// Historial de cada turno (alta, cambios, cancelación), para el panel.
+model BookingEvent {
+  id        String   @id @default(cuid())
+  bookingId String
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  /// created | updated | rescheduled | cancelled | reactivated
+  action    String
+  /// customer | admin
+  actor     String
+  detail    String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([bookingId, createdAt])
 }

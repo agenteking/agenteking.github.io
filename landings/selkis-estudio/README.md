@@ -25,10 +25,14 @@ Nota sobre Prisma: el dist-tag `latest` del CLI `prisma` apunta hoy a `8.0.0-rc.
 ## Estructura
 
 ```
-server/src/      API Express (index.ts, routes.ts, availability.ts, db.ts, time.ts)
+shared/          código común a server, demo estática y front: seed-data.ts (servicios, equipo, horarios),
+                 rules.ts (slots, conflictos, identificación), schemas.ts (zod), messages.ts, types.ts, time.ts
+server/src/      API Express: app.ts, routes.ts (público), manage.ts (Gestionar mi turno), admin.ts (ABM),
+                 store.ts (acceso a datos), ssr.ts (landing con datos vivos), http.ts, db.ts, index.ts
 prisma/          schema.prisma, migrations/, seed.ts   (prisma.config.ts en la raíz)
-web/             front React + Vite (index.html, src/, public/img con AVIF/WebP)
-scripts/         prerender.mjs (SSG del landing en el build)
+web/             front React + Vite (src/booking: reserva + gestionar; src/admin: panel; src/demo-api.ts)
+scripts/         prerender.mjs (SSG del landing en el build + plantilla para el SSR)
+tests/           node:test con tsx: reglas puras + API contra una SQLite temporal
 data/            SQLite (gitignored)
 docs/            análisis, screenshots, reportes de Lighthouse
 ```
@@ -42,6 +46,7 @@ npm run setup               # migraciones + prisma generate + seed (servicios, p
 npm run dev                 # API :4310 (tsx watch) + Vite :5173 con proxy /api
 npm run build               # prisma generate + vite build + SSR prerender + tsc del server
 npm start                   # migrate deploy + Express sirve dist/web y /api en PORT (4310)
+npm test                    # tests (reglas + API de punta a punta contra una base temporal)
 npm run lint                # oxlint
 npm run typecheck           # tsc server + web
 npm run db:migrate          # nueva migración en desarrollo
@@ -52,31 +57,73 @@ npm run db:seed             # re-seed (idempotente)
 
 ## API
 
+Errores: `{ error, message, issues? }` con `message` en castellano; `issues` trae los mensajes por campo de zod.
+
+### Público
+
 | Método | Ruta | Descripción |
 |---|---|---|
-| GET | `/api/services` | Servicios activos (con profesionales) y horarios del local |
+| GET | `/api/services` | Catálogo del sitio: servicios activos con al menos una profesional activa, equipo activo y horarios. Sin cache (un cambio del panel se ve al toque) |
 | GET | `/api/availability?serviceId&date=YYYY-MM-DD[&professionalId]` | Horarios libres según la duración del servicio, el horario del local y los turnos existentes (sin superposición). Intervalos de 30 min, al menos 60 min de anticipación, hasta 60 días adelante |
-| POST | `/api/bookings` | `{serviceId, professionalId?, date, time, name, phone, email}`, validado con zod. Si no se elige profesional, se asigna uno libre. Responde 409 si el horario ya no está libre (el chequeo y el alta van en una transacción) |
-| GET | `/api/bookings?status=all\|confirmed\|cancelled&from=YYYY-MM-DD` | **Admin**: header `x-admin-key` |
-| POST | `/api/bookings/:id/cancel` | **Admin**: cancela y libera el horario |
+| POST | `/api/bookings` | `{serviceId, professionalId?, date, time, name, phone, email}`. Sin profesional se asigna una libre. 409 si el horario ya no está libre (chequeo y alta en una transacción) |
 
-**Clave admin:** la variable `ADMIN_KEY` del `.env` (en `.env.example` viene `cambiame`: poné una propia). El panel está en `/admin`.
+### Gestionar mi turno
+
+La clienta se identifica con el **código de reserva** (`SLK-XXXXXX`, sin importar mayúsculas ni el prefijo) **+ el celular o el email** con el que reservó (celular: se comparan los últimos 8 dígitos, así `11 2345-6789` y `+54 9 11 2345 6789` coinciden; email sin distinguir mayúsculas). Si cualquiera de los dos no coincide la respuesta es la misma (404), y hay un freno de 20 intentos fallidos por IP cada 15 min. Todo va en el body (POST/PUT), así el contacto no queda en URLs ni logs. Se puede cambiar o cancelar online **hasta una hora antes**; después, por WhatsApp.
+
+| Método | Ruta | Body | Descripción |
+|---|---|---|---|
+| POST | `/api/my-booking` | `{code, contact}` | Ver el turno (+ `canChange`) |
+| POST | `/api/my-booking/availability` | `{code, contact, serviceId, date, professionalId?}` | Horarios libres para el cambio: mismas reglas que reservar, sin contar su propio turno |
+| PUT | `/api/my-booking` | `{code, contact, serviceId, professionalId?, date, time}` | Cambiar servicio, profesional, día y horario. Sin preferencia, se queda con su profesional si está libre |
+| POST | `/api/my-booking/cancel` | `{code, contact}` | Cancelar |
+
+### Panel admin (header `x-admin-key` en todo `/api/admin`)
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/api/admin/bookings?from&to&status=all\|confirmed\|cancelled&professionalId` | Turnos con filtros (fechas inclusive, hora BA) |
+| GET | `/api/admin/bookings/:id` | Turno + historial (`events`) |
+| POST | `/api/admin/bookings` | Carga manual `{serviceId, professionalId, date, time, name, phone?, email?, notes?, status?, force?}`. No aplica la anticipación mínima; superposición, fuera de horario, local cerrado, profesional que no hace el servicio o inactivos → 409 `conflicts` con la lista, y se guarda igual con `force: true` |
+| PUT | `/api/admin/bookings/:id` | Editar (mismo body; mover día/hora/profesional/servicio, datos de la clienta, estado). Mismos conflictos |
+| POST | `/api/admin/bookings/:id/cancel` | Cancelar |
+| DELETE | `/api/admin/bookings/:id` | Eliminar (con su historial) |
+| GET/POST | `/api/admin/services` | Listar (con turnos próximos/totales) / crear `{name, category, description, durationMin (múltiplo de 15), priceFrom, active, professionalIds?}` |
+| PUT/DELETE | `/api/admin/services/:id` | Editar / eliminar |
+| GET/POST | `/api/admin/professionals` | Listar / crear `{name, specialty, active, serviceIds?}` |
+| PUT/DELETE | `/api/admin/professionals/:id` | Editar / eliminar |
+
+**Bajas:** no se puede eliminar un servicio o una profesional con turnos próximos confirmados (409 `has_future_bookings`) ni con turnos en el historial (409 `has_history`, para no perderlo): el panel ofrece **desactivarlo**, que lo saca del sitio y de la reserva online. Una profesional desactivada conserva sus turnos (el panel avisa cuántos hay para reasignar).
+
+`GET /api/bookings` y `POST /api/bookings/:id/cancel` (las rutas viejas del panel) siguen andando.
+
+**Clave admin:** la variable `ADMIN_KEY` del `.env` (en `.env.example` viene `cambiame`: poné una propia). El panel está en `/admin`: pestañas **Turnos** (filtros por fechas, estado y profesional; alta manual con horarios libres sugeridos; editar con historial; cancelar; eliminar), **Servicios** y **Profesionales** (alta, edición, activar/desactivar, eliminar).
+
+### Base de datos
+
+Migraciones en `prisma/migrations/`. `20261119154519_abm_and_history` agrega `active`, `sortOrder`, `createdAt` y `updatedAt` a profesionales, `createdAt`/`updatedAt` a servicios, `source` (online/admin), `notes` y `updatedAt` a turnos, y la tabla `BookingEvent` (historial: alta, cambios, cancelación, quién lo hizo). Los datos existentes se conservan (`npm start` corre `prisma migrate deploy`).
+
+### El sitio lee todo de la base
+
+Servicios, precios, categorías, el equipo ("El equipo") y la elección de profesional salen de `/api/services`; no hay precios ni nombres fijos en el front. El landing se **prerenderiza en el build con el seed** (`shared/seed-data.ts`) y ese catálogo viaja en `<script id="selkis-data">` para hidratar sin diferencias; con Express, además, **el server renderiza el landing por request con los datos vivos** (`server/src/ssr.ts`, cache invalidada con cada cambio del panel), así el HTML inicial ya trae lo cargado en el panel. En los dos casos el front después pide `/api/services` y se actualiza.
 
 ### Demo estática (GitHub Pages)
 
-`VITE_STATIC_DEMO=1 BASE_PATH=/selkis-estudio/ npm run build:web` arma un sitio 100 % estático en `dist/web`: la API se simula en el navegador (`web/src/demo-api.ts`, mismos servicios, horarios y reglas de turnos que el server) y los turnos se guardan en `localStorage`. El panel queda en `<base>admin/` y en esa demo entra con **cualquier clave no vacía**. Sin `VITE_STATIC_DEMO` todo funciona igual que antes, contra Express.
+`VITE_STATIC_DEMO=1 BASE_PATH=/selkis-estudio/ npm run build:web` arma un sitio 100 % estático en `dist/web`: la API entera (reserva, Gestionar mi turno y el ABM del panel) se simula en el navegador (`web/src/demo-api.ts`), con el mismo seed, las mismas reglas (`shared/rules.ts`), la misma validación zod y los mismos mensajes que el server. Servicios, equipo, turnos e historial se guardan en `localStorage` (clave `selkis-demo-v2`; los turnos de la versión anterior se migran solos), compartido entre el sitio y el panel: un precio o una profesional cargados en el panel se ven en el sitio. El panel queda en `<base>admin/` y en esa demo entra con **cualquier clave no vacía**. Sin `VITE_STATIC_DEMO` todo funciona contra Express.
 
 Las horas se manejan en hora de Buenos Aires (UTC-3, sin horario de verano) y se guardan en UTC.
 
 ## Front
 
 - El landing es mobile-first y se **prerenderiza en el build**: el HTML llega completo y React hidrata dentro de `startTransition`, en tramos que no bloquean el hilo principal.
-- El flujo de reserva (Radix Dialog + Radix Themes) está **code-split**: no pesa en la carga inicial y se precarga cuando el navegador queda libre. Link directo: `/#reservar`.
+- El flujo de reserva y el de **Gestionar mi turno** (Radix Dialog + Radix Themes) están **code-split**: no pesan en la carga inicial y se precargan cuando el navegador queda libre. Links directos: `/#reservar` y `/#mi-turno` (también en el menú, el hero, "Turnos online", el pie y la confirmación de la reserva).
 - Imágenes AVIF/WebP responsive con `width`/`height` (CLS 0) y `loading="lazy"`. Animaciones solo con CSS, y respetan `prefers-reduced-motion`.
 - Cache: `/assets/*` (con hash) usa `max-age=1y, immutable`; `index.html` usa `no-cache`. La compresión es brotli/gzip.
 - Marca de la demo configurable con `VITE_DEMO_BRAND` (default "KingKanel").
 
 ## Calidad (19-11-2026, local)
+
+`npm test`: 26 tests (reglas puras + API de punta a punta contra una SQLite temporal con las migraciones y el seed reales). Además se probó con Playwright (Chromium headless), en modo Express y en la demo estática: reservar, gestionar (identificar, cambiar servicio/día/horario, cancelar), y en el panel alta de profesional y servicio, cambio de precio, turno manual con conflicto y "Guardar igual", edición con historial, cancelar, eliminar y bajas bloqueadas; todo reflejado en el sitio y sin errores de consola. Los números de Lighthouse de abajo son de antes de estos cambios.
 
 Lighthouse 13.6.0 (reportes en `docs/lighthouse/`):
 

@@ -5,6 +5,7 @@ import "./styles.css";
 import { StrictMode, Suspense, lazy, startTransition } from "react";
 import { createRoot, hydrateRoot } from "react-dom/client";
 import { App } from "./App";
+import type { PublicData } from "./api";
 
 const Admin = lazy(() => import("./admin/Admin"));
 
@@ -22,13 +23,20 @@ if (isAdmin) {
     </StrictMode>,
   );
 } else if (el.hasChildNodes()) {
-  // HTML prerenderizado en el build (scripts/prerender.mjs): solo hidratamos.
+  // HTML prerenderizado (build) o renderizado por Express con la base viva: solo hidratamos, con el
+  // mismo catálogo con el que se armó el HTML (<script id="selkis-data">). Después App pide los datos vivos.
   // En una transición React hidrata en tramos cortos y no bloquea el hilo principal.
+  let initialData: PublicData | null = null;
+  try {
+    initialData = JSON.parse(document.getElementById("selkis-data")?.textContent ?? "null") as PublicData | null;
+  } catch {
+    /* sin datos embebidos: App los pide a la API */
+  }
   startTransition(() => {
     hydrateRoot(
       el,
       <StrictMode>
-        <App />
+        <App initialData={initialData} />
       </StrictMode>,
     );
   });

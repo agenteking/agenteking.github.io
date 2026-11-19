@@ -4,7 +4,7 @@
     "lib": ["es2024"],
     "module": "nodenext",
     "moduleResolution": "nodenext",
-    "rootDir": "src",
+    "rootDir": "..",
     "outDir": "../dist/server",
     "strict": true,
     "noUncheckedIndexedAccess": true,
@@ -13,5 +13,6 @@
     "types": ["node"],
     "sourceMap": false
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "../shared/**/*.ts"],
+  "exclude": ["../**/*.test.ts"]
 }

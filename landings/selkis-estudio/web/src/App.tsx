@@ -1,6 +1,6 @@
 import * as Accordion from "@radix-ui/react-accordion";
 import { Suspense, lazy, useEffect, useMemo, useState } from "react";
-import { formatARS, formatDuration, getServices, type BusinessHour, type Service } from "./api";
+import { formatARS, formatDuration, getServices, type BusinessHour, type PublicData, type Service } from "./api";
 import {
   IconArrow,
   IconCalendar,
@@ -15,6 +15,7 @@ import {
   IconStar,
   IconWhatsApp,
 } from "./components/Icons";
+import type { SheetState } from "./components/BookingSheet";
 import { Picture } from "./components/Picture";
 import { DEMO_BRAND, business, faqs, reviews, waLink, weekdayNames } from "./content";
 
@@ -24,6 +25,7 @@ const prefetchBooking = () => {
   void import("./components/BookingSheet");
   void import("./booking/BookingFlow");
 };
+const prefetchManage = () => void import("./booking/ManageFlow");
 
 function Wordmark() {
   return (
@@ -58,6 +60,7 @@ function Header({ onBook }: { onBook: () => void }) {
           <a href="#estudio">El estudio</a>
           <a href="#resenas">Reseñas</a>
           <a href="#visitanos">Visitanos</a>
+          <a href="#mi-turno">Mi turno</a>
         </nav>
         <button type="button" className="btn btn-dark btn-sm" onClick={onBook}>
           Reservar turno
@@ -93,6 +96,9 @@ function Hero({ onBook }: { onBook: () => void }) {
               <IconWhatsApp size={18} /> WhatsApp
             </a>
           </div>
+          <p className="manage-hint reveal">
+            ¿Ya tenés turno? <a href="#mi-turno">Cambialo o cancelalo acá</a>
+          </p>
           <a className="rating-chip reveal" href={business.maps} target="_blank" rel="noopener">
             <span className="stars" aria-hidden>
               {Array.from({ length: 5 }, (_, i) => (
@@ -146,7 +152,8 @@ function Marquee() {
 
 function Services({ services, onBook }: { services: Service[] | null; onBook: (id?: string) => void }) {
   const categories = useMemo(() => [...new Set((services ?? []).map((s) => s.category))], [services]);
-  const [cat, setCat] = useState<string>("Todos");
+  const [chosen, setCat] = useState<string>("Todos");
+  const cat = categories.includes(chosen) ? chosen : "Todos";
   const shown = (services ?? []).filter((s) => cat === "Todos" || s.category === cat);
   return (
     <section className="section" id="servicios">
@@ -266,6 +273,48 @@ function Studio() {
   );
 }
 
+function Team({ data, onBook }: { data: PublicData | null; onBook: () => void }) {
+  const team = data?.professionals ?? null;
+  return (
+    <section className="section" id="equipo" aria-labelledby="equipo-t">
+      <div className="container">
+        <div className="section-head section-head-row">
+          <div>
+            <p className="eyebrow">El equipo</p>
+            <h2 className="section-title" id="equipo-t">
+              Quiénes te <em>atienden</em>
+            </h2>
+          </div>
+          <button type="button" className="btn btn-ghost" onClick={onBook}>
+            <IconCalendar size={18} /> Elegí con quién
+          </button>
+        </div>
+        <ul className="team-grid">
+          {team === null
+            ? Array.from({ length: 3 }, (_, i) => <li key={i} className="team-card is-skeleton" />)
+            : team.map((p) => {
+                // En el orden del catálogo (el mismo que la lista de servicios).
+                const does = (data?.services ?? []).filter((s) => p.serviceIds.includes(s.id)).map((s) => s.name);
+                return (
+                  <li key={p.id} className="team-card">
+                    <span className="team-avatar" aria-hidden>
+                      {p.name.trim().slice(-1).toUpperCase()}
+                    </span>
+                    <div>
+                      <h3>{p.name}</h3>
+                      {p.specialty && <p className="team-spec">{p.specialty}</p>}
+                      {does.length > 0 && <p className="team-does">{does.join(" · ")}</p>}
+                    </div>
+                  </li>
+                );
+              })}
+        </ul>
+        <p className="fineprint">Nombres de muestra: el estudio carga su equipo real desde el panel.</p>
+      </div>
+    </section>
+  );
+}
+
 function Gallery() {
   const items = [
     { name: "art", alt: "Nail art rojo con letras" },
@@ -373,6 +422,9 @@ function Steps({ onBook }: { onBook: () => void }) {
           <button type="button" className="btn btn-accent btn-lg" onClick={onBook}>
             <IconCalendar size={18} /> Ver horarios disponibles
           </button>
+          <p className="manage-hint">
+            ¿Necesitás cambiar o cancelar? <a href="#mi-turno">Gestionar mi turno</a>
+          </p>
         </div>
       </div>
     </section>
@@ -484,6 +536,9 @@ function Footer() {
           <p>
             {business.address}, {business.area}
           </p>
+          <p>
+            <a href="#mi-turno">Gestionar mi turno</a>
+          </p>
         </div>
         <div className="footer-social">
           <a href={business.instagram} target="_blank" rel="noopener" aria-label="Instagram">
@@ -518,19 +573,40 @@ function MobileBar({ onBook }: { onBook: () => void }) {
   );
 }
 
-export function App() {
-  const [data, setData] = useState<{ services: Service[]; hours: BusinessHour[] } | null>(null);
-  const [booking, setBooking] = useState<{ open: boolean; serviceId?: string }>({ open: false });
+const SHEET_HASHES: Record<string, SheetState> = {
+  "#reservar": { open: true, mode: "book" },
+  "#mi-turno": { open: true, mode: "manage" },
+};
+
+/** `initialData`: el catálogo con el que se renderizó el HTML (seed en el build, base viva con Express). */
+export function App({ initialData = null }: { initialData?: PublicData | null }) {
+  const [data, setData] = useState<PublicData | null>(initialData);
+  const [sheet, setSheet] = useState<SheetState>({ open: false, mode: "book" });
   const [sheetLoaded, setSheetLoaded] = useState(false);
-  const open = (serviceId?: string) => {
+  const openSheet = (s: SheetState) => {
     prefetchBooking();
+    if (s.mode === "manage") prefetchManage();
     setSheetLoaded(true);
-    setBooking({ open: true, serviceId });
+    setSheet(s);
+  };
+  const open = (serviceId?: string) => openSheet({ open: true, mode: "book", serviceId });
+  const changeSheet = (s: SheetState) => {
+    setSheet(s);
+    // Al cerrar se limpia el #reservar / #mi-turno, así el mismo link vuelve a abrirlo.
+    if (!s.open && SHEET_HASHES[window.location.hash]) {
+      history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
   };
 
   useEffect(() => {
-    // Link directo al flujo: https://…/#reservar
-    if (window.location.hash === "#reservar") open();
+    // Links directos: https://…/#reservar y https://…/#mi-turno (también desde links de la página).
+    const onHash = () => {
+      const s = SHEET_HASHES[window.location.hash];
+      if (s) openSheet(s);
+    };
+    onHash();
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -541,9 +617,10 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    // Datos vivos (precios, servicios y equipo cargados desde el panel).
     getServices()
       .then(setData)
-      .catch(() => setData({ services: [], hours: [] }));
+      .catch(() => setData((d) => d ?? { services: [], hours: [], professionals: [] }));
   }, []);
 
   return (
@@ -555,6 +632,7 @@ export function App() {
         <Marquee />
         <Services services={data?.services ?? null} onBook={open} />
         <Studio />
+        <Team data={data} onBook={() => open()} />
         <Reviews />
         <Gallery />
         <Steps onBook={() => open()} />
@@ -566,11 +644,7 @@ export function App() {
       <MobileBar onBook={() => open()} />
       {sheetLoaded && (
         <Suspense fallback={<div className="sheet-overlay" />}>
-          <BookingSheet
-            open={booking.open}
-            serviceId={booking.serviceId}
-            onOpenChange={(o) => setBooking((b) => ({ ...b, open: o }))}
-          />
+          <BookingSheet state={sheet} onChange={changeSheet} />
         </Suspense>
       )}
     </>

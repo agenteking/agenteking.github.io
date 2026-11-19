@@ -53,6 +53,6 @@ export const faqs = [
   },
   {
     q: "¿Cómo cancelo o cambio un turno?",
-    a: "Escribinos por WhatsApp con tu código de reserva y lo reprogramamos.",
+    a: "Desde “Gestionar mi turno” (arriba de todo o en el pie de la página), con tu código de reserva y el celular o email con el que reservaste: podés cambiar servicio, profesional, día u horario, o cancelarlo, hasta una hora antes. Si falta menos, escribinos por WhatsApp.",
   },
 ];

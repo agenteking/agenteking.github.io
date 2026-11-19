@@ -1,0 +1,115 @@
+/* Panel admin: Radix Themes + ajustes de layout (mobile-first) */
+.adm {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 32px 16px 64px;
+}
+.adm .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.adm-tab {
+  padding-top: 20px;
+}
+.adm-flash {
+  position: sticky;
+  top: 8px;
+  z-index: 5;
+  min-height: 0;
+}
+.adm-flash > * {
+  margin-bottom: 12px;
+}
+.adm-card {
+  padding: 0;
+  overflow: hidden;
+}
+.adm-nowrap {
+  white-space: nowrap;
+}
+.adm-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.adm-field .rt-SelectTrigger {
+  width: 100%;
+}
+.adm-grid2 {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 560px) {
+  .adm-grid2 {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.adm-toolbar {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr 1fr;
+  margin-bottom: 16px;
+  align-items: end;
+}
+.adm-toolbar-actions {
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+}
+@media (min-width: 900px) {
+  .adm-toolbar {
+    grid-template-columns: 160px 160px 160px 200px 1fr;
+  }
+  .adm-toolbar-actions {
+    grid-column: auto;
+  }
+}
+.adm-fieldset {
+  border: 1px solid var(--gray-a5);
+  border-radius: var(--radius-3);
+  padding: 10px 12px 12px;
+  display: grid;
+  gap: 8px;
+}
+.adm-fieldset legend {
+  padding: 0 4px;
+}
+.adm-checks {
+  display: grid;
+  gap: 6px 16px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+.adm-check-group {
+  display: grid;
+  gap: 4px;
+}
+.adm-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 24px;
+}
+.adm-conflicts {
+  margin: 4px 0 0 18px;
+  font-size: 13px;
+}
+.adm-history {
+  border-top: 1px solid var(--gray-a5);
+  padding-top: 10px;
+}
+.adm-history summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+}
+.adm-history ol {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: grid;
+  gap: 8px;
+}

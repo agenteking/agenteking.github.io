@@ -4,61 +4,31 @@ import { Badge, Button, Callout, Flex, RadioCards, Spinner, Text, TextField, The
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   ApiError,
-  createBooking,
+  api,
+  errorMessage,
+  fieldErrors,
   formatARS,
   formatDuration,
-  getAvailability,
   getServices,
   type Booking,
   type BusinessHour,
   type Service,
   type Slot,
 } from "../api";
-import { business, waLink } from "../content";
+import { waLink } from "../content";
+import { dayParts, gcalLink, nextDays } from "./dates";
+import { BookingSummary, DayPicker, SlotGrid } from "./pickers";
 
-const TZ = "America/Argentina/Buenos_Aires";
 const STEPS = ["Servicio", "Profesional", "Día y hora", "Tus datos"] as const;
-
-const ymd = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(d); // YYYY-MM-DD
-const dayParts = (date: string) => {
-  const d = new Date(`${date}T12:00:00-03:00`);
-  return {
-    wd: new Intl.DateTimeFormat("es-AR", { weekday: "short", timeZone: TZ }).format(d).replace(".", ""),
-    day: new Intl.DateTimeFormat("es-AR", { day: "numeric", timeZone: TZ }).format(d),
-    month: new Intl.DateTimeFormat("es-AR", { month: "short", timeZone: TZ }).format(d).replace(".", ""),
-    long: new Intl.DateTimeFormat("es-AR", { weekday: "long", day: "numeric", month: "long", timeZone: TZ }).format(d),
-    weekday: d.getUTCDay(),
-  };
-};
-
-function nextDays(n: number) {
-  const out: string[] = [];
-  const now = Date.now();
-  for (let i = 0; i < n; i++) out.push(ymd(new Date(now + i * 86_400_000)));
-  return out;
-}
-
-function gcalLink(b: Booking) {
-  const fmt = (date: string, time: string) => {
-    const d = new Date(`${date}T${time}:00-03:00`);
-    return d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
-  };
-  const q = new URLSearchParams({
-    action: "TEMPLATE",
-    text: `${b.service.name} · Selkis Estudio`,
-    dates: `${fmt(b.date, b.time)}/${fmt(b.date, b.endTime)}`,
-    details: `Código de reserva ${b.code} (turno de demo)`,
-    location: `${business.address}, ${business.area}`,
-  });
-  return `https://calendar.google.com/calendar/render?${q}`;
-}
 
 interface Props {
   initialServiceId?: string;
   onDone: () => void;
+  /** Abre "Gestionar mi turno" (desde la confirmación). */
+  onManage?: (b: Booking) => void;
 }
 
-export default function BookingFlow({ initialServiceId, onDone }: Props) {
+export default function BookingFlow({ initialServiceId, onDone, onManage }: Props) {
   const [services, setServices] = useState<Service[] | null>(null);
   const [hours, setHours] = useState<BusinessHour[]>([]);
   const [step, setStep] = useState(initialServiceId ? 1 : 0);
@@ -98,7 +68,7 @@ export default function BookingFlow({ initialServiceId, onDone }: Props) {
     let alive = true;
     setSlots(null);
     setTime(null);
-    getAvailability(serviceId, date, proId === "any" ? undefined : proId)
+    api.getAvailability(serviceId, date, proId === "any" ? undefined : proId)
       .then((r) => alive && setSlots(r.slots))
       .catch(() => alive && setSlots([]));
     return () => {
@@ -124,7 +94,7 @@ export default function BookingFlow({ initialServiceId, onDone }: Props) {
     setSubmitting(true);
     setError(null);
     try {
-      const b = await createBooking({
+      const b = await api.createBooking({
         serviceId,
         professionalId: proId === "any" ? undefined : proId,
         date,
@@ -138,13 +108,12 @@ export default function BookingFlow({ initialServiceId, onDone }: Props) {
         setStep(2);
         setSlots(null);
         setTime(null);
-        const r = await getAvailability(serviceId, date, proId === "any" ? undefined : proId).catch(() => null);
+        const r = await api.getAvailability(serviceId, date, proId === "any" ? undefined : proId).catch(() => null);
         setSlots(r?.slots ?? []);
       } else if (err instanceof ApiError && err.body.issues) {
-        const issues = err.body.issues;
-        setErrors(Object.fromEntries(Object.entries(issues).map(([k, v]) => [k, v[0] ?? "Revisá este dato"])));
+        setErrors(fieldErrors(err));
       } else {
-        setError("No pudimos confirmar el turno. Probá de nuevo.");
+        setError(errorMessage(err, "No pudimos confirmar el turno. Probá de nuevo."));
       }
     } finally {
       setSubmitting(false);
@@ -155,7 +124,6 @@ export default function BookingFlow({ initialServiceId, onDone }: Props) {
     (step === 0 && !!serviceId) || step === 1 || (step === 2 && !!date && !!time) || step === 3;
 
   if (done) {
-    const p = dayParts(done.date);
     return (
       <Theme accentColor="crimson" grayColor="mauve" radius="large" className="bk">
         <div className="bk-done">
@@ -164,30 +132,11 @@ export default function BookingFlow({ initialServiceId, onDone }: Props) {
           </div>
           <h2 className="bk-title">¡Turno reservado!</h2>
           <p className="bk-sub">Te esperamos, {done.customer.name.split(" ")[0]}.</p>
-          <dl className="bk-summary">
-            <div>
-              <dt>Servicio</dt>
-              <dd>{done.service.name}</dd>
-            </div>
-            <div>
-              <dt>Cuándo</dt>
-              <dd>
-                {p.long}, {done.time} hs
-              </dd>
-            </div>
-            <div>
-              <dt>Con</dt>
-              <dd>{done.professional.name}</dd>
-            </div>
-            <div>
-              <dt>Código</dt>
-              <dd>
-                <Badge size="2" color="crimson" variant="soft">
-                  {done.code}
-                </Badge>
-              </dd>
-            </div>
-          </dl>
+          <BookingSummary booking={done} />
+          <Text as="p" size="2" color="gray" mb="3">
+            Guardá el código: con él y tu celular o email podés cambiar o cancelar el turno desde{" "}
+            <strong>Gestionar mi turno</strong>.
+          </Text>
           <Callout.Root color="amber" size="1" variant="surface">
             <Callout.Text>Esto es una demo: el turno queda en el sistema de muestra, no en la agenda real del estudio.</Callout.Text>
           </Callout.Root>
@@ -197,6 +146,11 @@ export default function BookingFlow({ initialServiceId, onDone }: Props) {
                 Agregar a mi calendario
               </a>
             </Button>
+            {onManage && (
+              <Button size="3" variant="outline" onClick={() => onManage(done)}>
+                Gestionar mi turno
+              </Button>
+            )}
             <Button size="3" variant="soft" color="gray" onClick={onDone}>
               Volver al sitio
             </Button>
@@ -328,48 +282,8 @@ export default function BookingFlow({ initialServiceId, onDone }: Props) {
             <p className="bk-sub">
               {service.name} · {formatDuration(service.durationMin)}
             </p>
-            <div className="bk-days" role="listbox" aria-label="Días">
-              {days.map((d) => {
-                const p = dayParts(d);
-                const closed = !openDays.has(p.weekday);
-                return (
-                  <button
-                    key={d}
-                    type="button"
-                    role="option"
-                    aria-selected={date === d}
-                    disabled={closed}
-                    className={`bk-day ${date === d ? "is-on" : ""}`}
-                    onClick={() => setDate(d)}
-                  >
-                    <span className="wd">{p.wd}</span>
-                    <span className="dn">{p.day}</span>
-                    <span className="mo">{closed ? "cerrado" : p.month}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="bk-slots" aria-live="polite">
-              {slots === null ? (
-                <div className="bk-center">
-                  <Spinner size="3" />
-                </div>
-              ) : slots.length === 0 ? (
-                <p className="bk-empty">No quedan horarios este día. Probá con otro 💅</p>
-              ) : (
-                slots.map((s) => (
-                  <button
-                    key={s.time}
-                    type="button"
-                    className={`bk-slot ${time === s.time ? "is-on" : ""}`}
-                    aria-pressed={time === s.time}
-                    onClick={() => setTime(s.time)}
-                  >
-                    {s.time}
-                  </button>
-                ))
-              )}
-            </div>
+            <DayPicker days={days} openDays={openDays} value={date} onChange={setDate} />
+            <SlotGrid slots={slots} value={time} onChange={setTime} />
           </>
         )}
 

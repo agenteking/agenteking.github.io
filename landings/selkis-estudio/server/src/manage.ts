@@ -1,0 +1,116 @@
+// "Gestionar mi turno": la clienta se identifica con el código de reserva + el teléfono o el email
+// con el que reservó. Todo va por POST/PUT con body JSON (el contacto no queda en URLs ni logs).
+import { Router, type Request } from "express";
+import { canCustomerChange, contactMatches, normalizeCode } from "../../shared/rules.js";
+import { manageAuth, manageAvailability, manageChange, type ManageAuth } from "../../shared/schemas.js";
+import { localToDate } from "../../shared/time.js";
+import type { MyBooking } from "../../shared/types.js";
+import { prisma } from "./db.js";
+import { HttpError, parse } from "./http.js";
+import { availability, bookingInclude, describe, logEvent, serialize, type Db } from "./store.js";
+
+export const manage = Router();
+
+// Freno a la fuerza bruta: hasta 20 identificaciones fallidas por IP cada 15 minutos.
+const FAIL_WINDOW_MS = 15 * 60_000;
+const MAX_FAILS = 20;
+const fails = new Map<string, { n: number; reset: number }>();
+
+function checkRate(req: Request) {
+  const f = fails.get(req.ip ?? "?");
+  if (f && f.reset > Date.now() && f.n >= MAX_FAILS) throw new HttpError(429, "too_many_attempts");
+}
+
+function recordFail(req: Request) {
+  const key = req.ip ?? "?";
+  const now = Date.now();
+  const f = fails.get(key);
+  if (!f || f.reset <= now) fails.set(key, { n: 1, reset: now + FAIL_WINDOW_MS });
+  else f.n++;
+  if (fails.size > 5000) for (const [k, v] of fails) if (v.reset <= now) fails.delete(k);
+}
+
+/** Busca el turno por código y verifica el contacto. Misma respuesta si falla cualquiera de los dos. */
+async function findOwned(db: Db, req: Request, auth: Required<ManageAuth>) {
+  checkRate(req);
+  const b = await db.booking.findUnique({ where: { code: normalizeCode(auth.code) }, include: bookingInclude });
+  if (!b || !contactMatches(auth.contact, { phone: b.customerPhone, email: b.customerEmail })) {
+    recordFail(req);
+    throw new HttpError(404, "booking_not_found");
+  }
+  return b;
+}
+
+type Row = Awaited<ReturnType<typeof findOwned>>;
+const mine = (b: Row): MyBooking => ({
+  ...serialize(b),
+  canChange: b.status === "confirmed" && canCustomerChange(b.start),
+});
+
+function assertChangeable(b: Row) {
+  if (b.status !== "confirmed") throw new HttpError(409, "booking_cancelled");
+  if (!canCustomerChange(b.start)) throw new HttpError(409, "too_late");
+}
+
+manage.post("/", async (req, res) => {
+  const auth = parse(manageAuth, req.body, res);
+  if (!auth) return;
+  res.set("Cache-Control", "no-store");
+  res.json(mine(await findOwned(prisma, req, auth)));
+});
+
+/** Horarios libres para el cambio: mismas reglas que reservar, sin contar el turno propio. */
+manage.post("/availability", async (req, res) => {
+  const d = parse(manageAvailability, req.body, res);
+  if (!d) return;
+  const b = await findOwned(prisma, req, d);
+  const r = await availability(prisma, { ...d, excludeBookingId: b.id });
+  res.set("Cache-Control", "no-store");
+  res.json({ date: d.date, serviceId: d.serviceId, durationMin: r.service.durationMin, closed: r.closed, slots: r.slots });
+});
+
+manage.put("/", async (req, res) => {
+  const d = parse(manageChange, req.body, res);
+  if (!d) return;
+  const updated = await prisma.$transaction(async (tx) => {
+    const b = await findOwned(tx, req, d);
+    assertChangeable(b);
+    const avail = await availability(tx, { ...d, excludeBookingId: b.id });
+    const slot = avail.slots.find((s) => s.time === d.time);
+    if (!slot) throw new HttpError(409, "slot_unavailable");
+    // Sin preferencia: si su profesional actual está libre, se queda con ella.
+    const professionalId =
+      d.professionalId ?? (slot.professionalIds.includes(b.professionalId) ? b.professionalId : slot.professionalIds[0]!);
+    const start = localToDate(d.date, d.time);
+    const u = await tx.booking.update({
+      where: { id: b.id },
+      data: {
+        serviceId: d.serviceId,
+        professionalId,
+        start,
+        end: new Date(start.getTime() + avail.service.durationMin * 60_000),
+      },
+      include: bookingInclude,
+    });
+    await logEvent(tx, b.id, "rescheduled", "customer", `${describe(b)} → ${describe(u)}`);
+    return u;
+  });
+  res.json(mine(updated));
+});
+
+manage.post("/cancel", async (req, res) => {
+  const auth = parse(manageAuth, req.body, res);
+  if (!auth) return;
+  const updated = await prisma.$transaction(async (tx) => {
+    const b = await findOwned(tx, req, auth);
+    assertChangeable(b);
+    const u = await tx.booking.update({
+      where: { id: b.id },
+      data: { status: "cancelled", cancelledAt: new Date() },
+      include: bookingInclude,
+    });
+    await logEvent(tx, b.id, "cancelled", "customer", describe(b));
+    return u;
+  });
+  res.json(mine(updated));
+});
