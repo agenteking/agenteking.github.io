@@ -6,6 +6,10 @@ export const SLOT_STEP_MIN = 30;
 /** Anticipación mínima para reservar, cambiar o cancelar online. */
 export const MIN_LEAD_MIN = 60;
 export const MAX_DAYS_AHEAD = 60;
+/** Turnos próximos confirmados que puede tener a la vez un mismo celular o email (reserva online). */
+export const MAX_ACTIVE_PER_CONTACT = 3;
+/** Menos que esto entre que se abre el flujo de reserva y se confirma = bot (ninguna persona elige servicio, día, hora y completa sus datos tan rápido). */
+export const MIN_FILL_MS = 4000;
 const DAY_MS = 86_400_000;
 
 export interface Interval {
@@ -144,4 +148,23 @@ export function uniqueSlug(name: string, taken: (id: string) => boolean, prefix 
   let id = base;
   for (let i = 2; taken(id); i++) id = `${base}-${i}`;
   return id;
+}
+
+/**
+ * Freno anti-bots sin captcha: el campo trampa (`website`, invisible para las personas) vino
+ * completo, o el formulario se completó más rápido de lo humanamente posible.
+ */
+export const looksLikeBot = (d: { website?: string; fillMs: number }) => !!d.website?.trim() || d.fillMs < MIN_FILL_MS;
+
+/** Turnos próximos confirmados del mismo celular o email (para el tope MAX_ACTIVE_PER_CONTACT). */
+export function activeForContact(
+  bookings: { start: Date; status: string; customerPhone: string; customerEmail: string }[],
+  contact: { phone: string; email: string },
+  now = new Date(),
+) {
+  return bookings.filter((b) => {
+    if (b.status !== "confirmed" || b.start <= now) return false;
+    const customer = { phone: b.customerPhone, email: b.customerEmail };
+    return contactMatches(contact.phone, customer) || (!!contact.email && contactMatches(contact.email, customer));
+  }).length;
 }

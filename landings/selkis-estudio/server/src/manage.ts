@@ -7,28 +7,17 @@ import { localToDate } from "../../shared/time.js";
 import type { MyBooking } from "../../shared/types.js";
 import { prisma } from "./db.js";
 import { HttpError, parse } from "./http.js";
+import { clientIp, limits } from "./rate-limit.js";
 import { availability, bookingInclude, describe, logEvent, serialize, type Db } from "./store.js";
 
 export const manage = Router();
 
-// Freno a la fuerza bruta: hasta 20 identificaciones fallidas por IP cada 15 minutos.
-const FAIL_WINDOW_MS = 15 * 60_000;
-const MAX_FAILS = 20;
-const fails = new Map<string, { n: number; reset: number }>();
-
+// Freno a la fuerza bruta: hasta 20 identificaciones fallidas por IP cada 15 minutos (rate-limit.ts).
 function checkRate(req: Request) {
-  const f = fails.get(req.ip ?? "?");
-  if (f && f.reset > Date.now() && f.n >= MAX_FAILS) throw new HttpError(429, "too_many_attempts");
+  if (limits.manage.blockedFor(clientIp(req))) throw new HttpError(429, "too_many_attempts");
 }
 
-function recordFail(req: Request) {
-  const key = req.ip ?? "?";
-  const now = Date.now();
-  const f = fails.get(key);
-  if (!f || f.reset <= now) fails.set(key, { n: 1, reset: now + FAIL_WINDOW_MS });
-  else f.n++;
-  if (fails.size > 5000) for (const [k, v] of fails) if (v.reset <= now) fails.delete(k);
-}
+const recordFail = (req: Request) => limits.manage.hit(clientIp(req));
 
 /** Busca el turno por código y verifica el contacto. Misma respuesta si falla cualquiera de los dos. */
 async function findOwned(db: Db, req: Request, auth: Required<ManageAuth>) {

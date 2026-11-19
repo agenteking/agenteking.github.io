@@ -2,7 +2,7 @@ import "@radix-ui/themes/styles.css";
 import "./admin.css";
 import { Button, Callout, Card, Flex, Heading, Tabs, Text, TextField, Theme } from "@radix-ui/themes";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { ApiError, STATIC_DEMO, api } from "../api";
+import { ApiError, STATIC_DEMO, api, errorMessage } from "../api";
 import BookingsTab from "./BookingsTab";
 import { AdminContext, type Catalog } from "./context";
 import ProfessionalsTab from "./ProfessionalsTab";
@@ -43,12 +43,16 @@ export default function Admin() {
 
   const reloadCatalog = useCallback(async () => {
     try {
-      const [s, p] = await Promise.all([api.adminListServices(key), api.adminListProfessionals(key)]);
+      // En serie, no en paralelo: una clave incorrecta cuenta como UN intento (el server frena a los 5 por IP).
+      const s = await api.adminListServices(key);
+      const p = await api.adminListProfessionals(key);
       setCatalog({ services: s.services, professionals: p.professionals });
       setError(null);
       storeKey(key);
     } catch (e) {
-      logout(e instanceof ApiError && e.status === 401 ? "Clave incorrecta." : "No se pudo cargar el panel.");
+      // 401 o 429 (demasiados intentos): se borra la clave guardada y vuelve al login con el motivo.
+      const status = e instanceof ApiError ? e.status : 0;
+      logout(status === 401 ? "Clave incorrecta." : status === 429 ? errorMessage(e) : "No se pudo cargar el panel.");
     }
   }, [key, logout]);
 
@@ -64,6 +68,7 @@ export default function Admin() {
 
   const login = (e: FormEvent) => {
     e.preventDefault();
+    setError(null);
     setKey(input.trim());
   };
 
@@ -71,6 +76,7 @@ export default function Admin() {
   const onError = useCallback(
     (e: unknown) => {
       if (e instanceof ApiError && e.status === 401) logout("La sesión venció: ingresá la clave de nuevo.");
+      else if (e instanceof ApiError && e.status === 429) logout(errorMessage(e));
     },
     [logout],
   );

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import compression from "compression";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { HttpError, sendError } from "./http.js";
+import { parseTrustProxy } from "./rate-limit.js";
 import { api } from "./routes.js";
 import { createSsr } from "./ssr.js";
 
@@ -20,7 +21,9 @@ export function createApp() {
 
   const app = express();
   app.disable("x-powered-by");
-  app.set("trust proxy", true);
+  // Off por defecto: req.ip es la IP del socket y X-Forwarded-For se ignora (si no, cualquiera rota la IP
+  // y saltea los frenos). Detrás de un proxy/túnel en la misma máquina (cloudflared): TRUST_PROXY=loopback.
+  app.set("trust proxy", parseTrustProxy(process.env.TRUST_PROXY));
   app.use(compression({ threshold: 512 })); // gzip / brotli según Accept-Encoding
   app.use(express.json({ limit: "20kb" }));
 

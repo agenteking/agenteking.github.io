@@ -39,6 +39,9 @@ export default function BookingFlow({ initialServiceId, onDone, onManage }: Prop
   const [slots, setSlots] = useState<Slot[] | null>(null);
   const [time, setTime] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", phone: "", email: "" });
+  // Anti-bots sin captcha: campo trampa invisible + tiempo desde que se abrió el flujo (shared/rules.ts → looksLikeBot).
+  const [honeypot, setHoneypot] = useState("");
+  const [openedAt] = useState(() => Date.now());
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -100,10 +103,12 @@ export default function BookingFlow({ initialServiceId, onDone, onManage }: Prop
         date,
         time,
         ...form,
+        website: honeypot,
+        fillMs: Date.now() - openedAt,
       });
       setDone(b);
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
+      if (err instanceof ApiError && err.body.error === "slot_unavailable") {
         setError("Uy, ese horario se acaba de ocupar. Elegí otro, porfa.");
         setStep(2);
         setSlots(null);
@@ -333,6 +338,20 @@ export default function BookingFlow({ initialServiceId, onDone, onManage }: Prop
               />
               {errors.email && <em>{errors.email}</em>}
             </label>
+            {/* Trampa para bots: fuera de pantalla, sin foco ni autocompletado. Una persona no la ve. */}
+            <div className="bk-hp" aria-hidden="true">
+              <label>
+                Dejá este campo vacío
+                <input
+                  type="text"
+                  name="website"
+                  tabIndex={-1}
+                  autoComplete="off"
+                  value={honeypot}
+                  onChange={(e) => setHoneypot(e.target.value)}
+                />
+              </label>
+            </div>
             <Text as="p" size="1" color="gray">
               Usamos tus datos solo para confirmarte el turno.
             </Text>

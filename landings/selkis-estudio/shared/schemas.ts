@@ -37,6 +37,10 @@ export const bookingBody = z.object({
   name,
   phone,
   email,
+  /** Honeypot: campo oculto que las personas no ven ni completan. */
+  website: z.string().max(200).optional().default(""),
+  /** Milisegundos desde que se abrió el flujo de reserva (tiempo mínimo de llenado). */
+  fillMs: z.number({ error: "Recargá la página y probá de nuevo." }).int().min(0),
 });
 export type BookingBody = z.input<typeof bookingBody>;
 

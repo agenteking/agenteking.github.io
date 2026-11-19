@@ -374,3 +374,13 @@
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+
+/* Honeypot del formulario de reserva (anti-bots): fuera de pantalla, no display:none (algunos bots lo saltean). */
+.bk-hp {
+  position: absolute;
+  left: -10000px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}

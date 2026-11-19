@@ -3,6 +3,9 @@ import { renderToString } from "react-dom/server";
 import type { PublicData } from "./api";
 import { App } from "./App";
 
+// canonical + OG + JSON-LD (web/src/site-seo.ts), con el mismo catálogo que el HTML.
+export { headFor } from "./site-seo";
+export { canonicalUrl } from "./seo";
 export { seedPublicData } from "../../shared/seed-data";
 
 /**

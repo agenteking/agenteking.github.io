@@ -1,4 +1,6 @@
 // Mensajes de error de la API (los mismos en Express y en la demo estática).
+import { MAX_ACTIVE_PER_CONTACT } from "./rules.js";
+
 export const MSG = {
   invalid_body: "Revisá los datos marcados.",
   invalid_query: "Parámetros inválidos.",
@@ -11,6 +13,10 @@ export const MSG = {
   booking_cancelled: "Este turno ya está cancelado.",
   too_late: "Falta menos de una hora para el turno: para cambiarlo o cancelarlo escribinos por WhatsApp.",
   too_many_attempts: "Demasiados intentos. Esperá unos minutos y probá de nuevo.",
+  too_many_admin_attempts: "Demasiados intentos con una clave incorrecta. Esperá 15 minutos y probá de nuevo.",
+  too_many_requests: "Demasiadas reservas seguidas desde esta conexión. Esperá unos minutos o escribinos por WhatsApp.",
+  too_many_bookings: `Ya tenés ${MAX_ACTIVE_PER_CONTACT} turnos próximos con ese celular o email. Para sacar otro, cambiá o cancelá uno desde “Gestionar mi turno”, o escribinos por WhatsApp.`,
+  bot_suspected: "No pudimos tomar la reserva. Esperá unos segundos y probá de nuevo, o escribinos por WhatsApp.",
   conflicts: "El turno choca con la agenda. Revisá los avisos o guardalo igual.",
   has_future_bookings: "Tiene turnos próximos confirmados: no se puede eliminar. Desactivalo o reasigná esos turnos.",
   has_history: "Tiene turnos en el historial: para no perderlos, desactivalo en vez de eliminarlo.",

@@ -5,6 +5,9 @@
 // - Con Express, además queda dist/ssr/{entry-server.js,template.html}: el server renderiza el
 //   landing por request con la base de datos (server/src/ssr.ts), así el HTML ya trae lo cargado
 //   en el panel. En la demo estática (VITE_STATIC_DEMO=1) dist/ssr se borra.
+// - <!--app-head--> (web/index.html) → canonical + OG + JSON-LD del negocio con el mismo catálogo
+//   (web/src/site-seo.ts). La URL canónica = SITE_URL (o VITE_SITE_URL, la de GitHub Pages) + BASE_PATH.
+//   En dist/ssr/template.html el marcador queda, y Express lo completa con la base viva.
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -15,8 +18,12 @@ const staticDemo = process.env.VITE_STATIC_DEMO === "1";
 // Misma base que web/vite.config.ts (BASE_PATH; "/" por defecto).
 const base = `/${(process.env.BASE_PATH ?? "").replace(/^\/+|\/+$/g, "")}/`.replace(/^\/\/$/, "/");
 
-const { render, seedPublicData } = await import(pathToFileURL(`${ssrDir}/entry-server.js`).href);
+const { render, seedPublicData, headFor, canonicalUrl } = await import(pathToFileURL(`${ssrDir}/entry-server.js`).href);
 let html = await readFile(indexPath, "utf8");
+const siteUrl =
+  process.env.SITE_URL || process.env.VITE_SITE_URL || (staticDemo ? "https://agenteking.github.io" : `http://localhost:${process.env.PORT ?? 4310}`);
+const url = canonicalUrl(siteUrl, base);
+if (!html.includes("<!--app-head-->")) throw new Error("No encontré <!--app-head--> en index.html");
 
 // Preload de las fuentes latin que se ven arriba del pliegue (evita el salto al cambiar de fuente).
 const assets = await readdir(`${root}dist/web/assets`);
@@ -30,7 +37,7 @@ html = html.replace("</title>", `</title>\n    ${fonts}`);
 // con el HTML sin prerender (main.tsx detecta la ruta y monta el panel).
 if (staticDemo) {
   await mkdir(`${root}dist/web/admin`, { recursive: true });
-  await writeFile(`${root}dist/web/admin/index.html`, html);
+  await writeFile(`${root}dist/web/admin/index.html`, html.replace("<!--app-head-->", ""));
 }
 
 if (!html.includes('<div id="root"></div>')) throw new Error("No encontré <div id=root> en index.html");
@@ -43,10 +50,11 @@ const json = JSON.stringify(data).replace(/</g, "\\u003c");
 await writeFile(
   indexPath,
   template
+    .replace("<!--app-head-->", () => headFor(data, url))
     .replace("<!--ssr-outlet-->", () => app)
     .replace("<!--ssr-data-->", () => `<script id="selkis-data" type="application/json">${json}</script>`),
 );
 
 if (staticDemo) await rm(ssrDir, { recursive: true, force: true });
 else await writeFile(`${ssrDir}/template.html`, template);
-console.log(`prerender OK (${(app.length / 1024).toFixed(1)} KB de HTML)${staticDemo ? "" : " · SSR en vivo: dist/ssr"}`);
+console.log(`prerender OK (${(app.length / 1024).toFixed(1)} KB de HTML · canonical ${url})${staticDemo ? "" : " · SSR en vivo: dist/ssr"}`);

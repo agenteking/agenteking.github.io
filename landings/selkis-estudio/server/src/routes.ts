@@ -1,10 +1,12 @@
 import { Router } from "express";
 import { availabilityQuery, bookingBody } from "../../shared/schemas.js";
+import { MAX_ACTIVE_PER_CONTACT, activeForContact, looksLikeBot } from "../../shared/rules.js";
 import { localToDate } from "../../shared/time.js";
 import { admin, cancelBookingHandler, listBookingsHandler, requireAdmin } from "./admin.js";
 import { prisma } from "./db.js";
 import { HttpError, parse } from "./http.js";
 import { manage } from "./manage.js";
+import { clientIp, limits } from "./rate-limit.js";
 import { availability, bookingInclude, describe, logEvent, publicData, serialize, uniqueCode } from "./store.js";
 
 export const api = Router();
@@ -28,14 +30,33 @@ api.get("/availability", async (req, res) => {
 });
 
 api.post("/bookings", async (req, res) => {
+  // Freno por IP: cuenta todos los intentos (también los inválidos), así no se llena la agenda con un script.
+  const ip = clientIp(req);
+  const wait = limits.bookings.blockedFor(ip);
+  if (wait) {
+    res.set("Retry-After", String(wait));
+    throw new HttpError(429, "too_many_requests");
+  }
+  limits.bookings.hit(ip);
   const d = parse(bookingBody, req.body, res);
   if (!d) return;
+  // Honeypot + tiempo mínimo de llenado (sin captcha). No se guarda nada.
+  if (looksLikeBot(d)) throw new HttpError(400, "bot_suspected");
   // Chequeo + alta en la misma transacción: SQLite serializa las escrituras, así que dos
   // reservas simultáneas al mismo horario no pueden pasar las dos.
   const booking = await prisma.$transaction(async (tx) => {
     const avail = await availability(tx, d);
     const slot = avail.slots.find((s) => s.time === d.time);
     if (!slot) throw new HttpError(409, "slot_unavailable");
+    // Tope de turnos próximos por celular o email (en la transacción: dos reservas simultáneas no lo saltean).
+    const now = new Date();
+    const upcoming = await tx.booking.findMany({
+      where: { status: "confirmed", start: { gt: now } },
+      select: { start: true, status: true, customerPhone: true, customerEmail: true },
+    });
+    if (activeForContact(upcoming, { phone: d.phone, email: d.email }, now) >= MAX_ACTIVE_PER_CONTACT) {
+      throw new HttpError(409, "too_many_bookings");
+    }
     const start = localToDate(d.date, d.time);
     const b = await tx.booking.create({
       data: {

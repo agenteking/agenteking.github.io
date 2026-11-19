@@ -1,6 +1,7 @@
 // Datos públicos del local (fuentes en docs/analisis.md) y textos del sitio.
 
-export const DEMO_BRAND = import.meta.env.VITE_DEMO_BRAND ?? "KingKanel";
+// `?.`: este archivo también se importa fuera de Vite (tsx en tests, vía site-seo.ts), donde no hay import.meta.env.
+export const DEMO_BRAND = import.meta.env?.VITE_DEMO_BRAND ?? "KingKanel";
 
 export const business = {
   name: "Selkis Estudio",

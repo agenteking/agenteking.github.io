@@ -1,5 +1,5 @@
 // Panel admin: ABM de turnos, servicios y profesionales. Todo /api/admin pide el header x-admin-key.
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { placementConflicts, uniqueSlug } from "../../shared/rules.js";
 import { adminBookingBody, adminBookingQuery, professionalBody, serviceBody } from "../../shared/schemas.js";
@@ -7,18 +7,36 @@ import { localToDate } from "../../shared/time.js";
 import type { AdminProfessional, AdminService, BookingEvent, BookingWithHistory } from "../../shared/types.js";
 import { prisma } from "./db.js";
 import { HttpError, parse, sendError } from "./http.js";
+import { clientIp, limits } from "./rate-limit.js";
 import { bookingInclude, bumpCatalog, busyFor, describe, getHours, logEvent, serialize, uniqueCode, type Db } from "./store.js";
 
+const sha256 = (s: string) => createHash("sha256").update(s).digest();
+
+/**
+ * Clave del panel (header x-admin-key) comparada en tiempo constante (hash de los dos lados: mismo
+ * largo siempre, no filtra el largo de la clave). Freno: 5 claves incorrectas por IP cada 15 min
+ * (rate-limit.ts); llegado el tope, 429 hasta que pase la ventana, aunque después venga la clave correcta.
+ */
 export function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const expected = Buffer.from(process.env.ADMIN_KEY ?? "cambiame");
-  const given = Buffer.from(String(req.get("x-admin-key") ?? ""));
-  if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
+  const ip = clientIp(req);
+  const wait = limits.admin.blockedFor(ip);
+  if (wait) {
+    res.set("Retry-After", String(wait));
+    sendError(res, 429, "too_many_admin_attempts");
+    return;
+  }
+  const given = String(req.get("x-admin-key") ?? "");
+  if (!given || !timingSafeEqual(sha256(given), sha256(adminKey()))) {
+    limits.admin.hit(ip);
     sendError(res, 401, "unauthorized");
     return;
   }
+  limits.admin.reset(ip);
   res.set("Cache-Control", "no-store");
   next();
 }
+
+const adminKey = () => process.env.ADMIN_KEY || "cambiame";
 
 export const admin = Router();
 admin.use(requireAdmin);

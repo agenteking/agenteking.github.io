@@ -6,6 +6,9 @@
 import type { z } from "zod";
 import { MSG, type ErrorCode } from "../../shared/messages";
 import {
+  MAX_ACTIVE_PER_CONTACT,
+  activeForContact,
+  looksLikeBot,
   canCustomerChange,
   computeSlots,
   contactMatches,
@@ -347,9 +350,13 @@ export const demoBackend: Backend = {
 
   async createBooking(data) {
     const d = parse(bookingBody, data);
+    // Mismos frenos que Express (salvo el límite por IP, que en el navegador no tiene sentido).
+    if (looksLikeBot(d)) fail(400, "bot_suspected");
     const db = load();
     const avail = availability(db, d);
     const slot = avail.slots.find((s) => s.time === d.time) ?? fail(409, "slot_unavailable");
+    const upcoming = db.bookings.map((x) => ({ ...x, start: new Date(x.start) }));
+    if (activeForContact(upcoming, { phone: d.phone, email: d.email }) >= MAX_ACTIVE_PER_CONTACT) fail(409, "too_many_bookings");
     const start = localToDate(d.date, d.time);
     const now = new Date().toISOString();
     const b: DbBooking = {

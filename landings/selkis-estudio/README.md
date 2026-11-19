@@ -40,7 +40,7 @@ docs/            análisis, screenshots, reportes de Lighthouse
 ## Uso
 
 ```bash
-cp .env.example .env        # PORT, DATABASE_URL, ADMIN_KEY
+cp .env.example .env        # PORT, DATABASE_URL, ADMIN_KEY, SITE_URL, TRUST_PROXY
 npm install
 npm run setup               # migraciones + prisma generate + seed (servicios, profesionales, horarios)
 npm run dev                 # API :4310 (tsx watch) + Vite :5173 con proxy /api
@@ -50,7 +50,8 @@ npm test                    # tests (reglas + API de punta a punta contra una ba
 npm run lint                # oxlint
 npm run typecheck           # tsc server + web
 npm run db:migrate          # nueva migración en desarrollo
-npm run db:seed             # re-seed (idempotente)
+npm run db:seed             # seed NO destructivo: solo agrega lo que falta (ver "Seed")
+npm run db:seed:reset       # BORRA todo (turnos incluidos) y vuelve al seed: solo desarrollo/demo
 ```
 
 `npm install` con npm 11 pide aprobar scripts de instalación. Ya están en `allowScripts` del `package.json`: better-sqlite3, prisma, @prisma/engines y esbuild.
@@ -65,11 +66,22 @@ Errores: `{ error, message, issues? }` con `message` en castellano; `issues` tra
 |---|---|---|
 | GET | `/api/services` | Catálogo del sitio: servicios activos con al menos una profesional activa, equipo activo y horarios. Sin cache (un cambio del panel se ve al toque) |
 | GET | `/api/availability?serviceId&date=YYYY-MM-DD[&professionalId]` | Horarios libres según la duración del servicio, el horario del local y los turnos existentes (sin superposición). Intervalos de 30 min, al menos 60 min de anticipación, hasta 60 días adelante |
-| POST | `/api/bookings` | `{serviceId, professionalId?, date, time, name, phone, email}`. Sin profesional se asigna una libre. 409 si el horario ya no está libre (chequeo y alta en una transacción) |
+| POST | `/api/bookings` | `{serviceId, professionalId?, date, time, name, phone, email, website, fillMs}`. Sin profesional se asigna una libre. 409 `slot_unavailable` si el horario ya no está libre (chequeo y alta en una transacción). Frenos: ver abajo |
+
+**Frenos de la reserva online** (sin captcha; los mismos mensajes en Express y en la demo):
+
+| Freno | Cómo | Respuesta |
+|---|---|---|
+| Límite por IP | 8 intentos cada 15 min (cuentan todos, también los inválidos), en memoria (`server/src/rate-limit.ts`) | 429 `too_many_requests` + `Retry-After` |
+| Honeypot | Campo `website` fuera de pantalla (`.bk-hp`, sin foco ni autocompletado): una persona lo deja vacío | 400 `bot_suspected`, no se guarda nada |
+| Tiempo mínimo | `fillMs` = ms desde que se abrió el flujo; menos de 4 s (`MIN_FILL_MS`) o sin el dato = bot | 400 `bot_suspected` |
+| Tope por clienta | Máximo 3 turnos próximos confirmados por celular (últimos 8 dígitos) **o** email (`MAX_ACTIVE_PER_CONTACT`), dentro de la transacción | 409 `too_many_bookings` ("…cambiá o cancelá uno desde Gestionar mi turno…") |
+
+La demo estática aplica honeypot, tiempo mínimo y tope por clienta (`shared/rules.ts`); el límite por IP no tiene sentido en el navegador.
 
 ### Gestionar mi turno
 
-La clienta se identifica con el **código de reserva** (`SLK-XXXXXX`, sin importar mayúsculas ni el prefijo) **+ el celular o el email** con el que reservó (celular: se comparan los últimos 8 dígitos, así `11 2345-6789` y `+54 9 11 2345 6789` coinciden; email sin distinguir mayúsculas). Si cualquiera de los dos no coincide la respuesta es la misma (404), y hay un freno de 20 intentos fallidos por IP cada 15 min. Todo va en el body (POST/PUT), así el contacto no queda en URLs ni logs. Se puede cambiar o cancelar online **hasta una hora antes**; después, por WhatsApp.
+La clienta se identifica con el **código de reserva** (`SLK-XXXXXX`, sin importar mayúsculas ni el prefijo) **+ el celular o el email** con el que reservó (celular: se comparan los últimos 8 dígitos, así `11 2345-6789` y `+54 9 11 2345 6789` coinciden; email sin distinguir mayúsculas). Si cualquiera de los dos no coincide la respuesta es la misma (404), y hay un freno de 20 intentos fallidos por IP cada 15 min (con la IP real: ver "IP real y proxy"). Todo va en el body (POST/PUT), así el contacto no queda en URLs ni logs. Se puede cambiar o cancelar online **hasta una hora antes**; después, por WhatsApp.
 
 | Método | Ruta | Body | Descripción |
 |---|---|---|---|
@@ -97,7 +109,33 @@ La clienta se identifica con el **código de reserva** (`SLK-XXXXXX`, sin import
 
 `GET /api/bookings` y `POST /api/bookings/:id/cancel` (las rutas viejas del panel) siguen andando.
 
-**Clave admin:** la variable `ADMIN_KEY` del `.env` (en `.env.example` viene `cambiame`: poné una propia). El panel está en `/admin`: pestañas **Turnos** (filtros por fechas, estado y profesional; alta manual con horarios libres sugeridos; editar con historial; cancelar; eliminar), **Servicios** y **Profesionales** (alta, edición, activar/desactivar, eliminar).
+**Clave admin:** la variable `ADMIN_KEY` del `.env` (en `.env.example` viene `cambiame`: poné una propia, `openssl rand -base64 24`; el server avisa al arrancar si es la de ejemplo o corta). Se compara en tiempo constante (SHA-256 de los dos lados) y hay **freno de 5 claves incorrectas por IP cada 15 min**: después, 429 `too_many_admin_attempts` ("…Esperá 15 minutos…") aunque venga la correcta; un acierto limpia los fallos de esa IP. El panel la guarda solo en `sessionStorage` (se va al cerrar la pestaña), la borra con cualquier 401/429 y verifica la clave con un solo request en serie (un intento = un fallo). El panel está en `/admin`: pestañas **Turnos** (filtros por fechas, estado y profesional; alta manual con horarios libres sugeridos; editar con historial; cancelar; eliminar), **Servicios** y **Profesionales** (alta, edición, activar/desactivar, eliminar).
+
+### IP real y proxy (`TRUST_PROXY`)
+
+Los frenos son por IP. Por defecto `trust proxy` está **apagado**: la IP es la del socket y `X-Forwarded-For` se ignora (antes estaba en `true` y cualquiera rotaba la IP con ese header y salteaba los frenos).
+
+| Cómo corre | `TRUST_PROXY` |
+|---|---|
+| Expuesto directo (sin proxy) | vacío (default) |
+| Detrás de cloudflared / Caddy / nginx **en la misma máquina** | `loopback` |
+| Detrás de N proxies en otras máquinas | `N` (saltos) o sus IPs/CIDR separadas por coma |
+
+Con un proxy de confianza, si llega `CF-Connecting-IP` (Cloudflare) se usa esa; si no, la que resuelve Express desde `X-Forwarded-For`. Nunca `true` si el puerto es alcanzable sin pasar por el proxy (el server avisa al arrancar). Con `loopback` y el túnel, conviene además escuchar solo en `127.0.0.1`.
+
+### SEO: canonical y JSON-LD
+
+`<!--app-head-->` (en `web/index.html`) se completa con canonical, OG y un JSON-LD `@graph` con el negocio (`BeautySalon` + `NailSalon`: dirección, `geo` del pin de OpenStreetMap, teléfono, `openingHoursSpecification` desde los horarios, `priceRange` y `hasOfferCatalog` con los servicios y su precio "desde", `potentialAction` `ReserveAction` a `#reservar`, `aggregateRating` 4,7 / 195 = la nota pública de Google que muestra la página, con la fuente), `WebSite` y `FAQPage` (las preguntas de la página). Código: `web/src/seo.ts` (plantilla genérica de `crear-web-cliente/templates/seo.ts`) + `web/src/site-seo.ts` (los datos de Selkis, de `content.ts`).
+
+- **URL canónica** = `SITE_URL` (origen, sin barra final) + `BASE_PATH`. En el build: `SITE_URL` o `VITE_SITE_URL`; la demo estática usa `https://agenteking.github.io` por defecto → `https://agenteking.github.io/selkis-estudio/`. En Express el SSR lee `SITE_URL` en cada render (sin ella, `http://localhost:PORT/` y avisa al arrancar).
+- **Se genera de los mismos datos que la página**: en el build con el seed (prerender) y en Express por request con la base viva (`server/src/ssr.ts`), así un cambio de precio, servicio o profesional del panel cambia el JSON-LD en el próximo render (cache invalidada por el panel, o 30 s si la base cambió por fuera). En la demo estática el JSON-LD es el del seed (los cambios del panel viven en el `localStorage` de quien mira).
+- Tests en `tests/seo.test.ts` (parsea el JSON-LD y chequea campos, horarios, precios, que refleje cambios y que un nombre con `</script>` no lo rompa) y en `tests/api.test.ts` (SSR con el precio cambiado, si hay build).
+
+### Seed
+
+`npm run db:seed` (también lo corre `npm run setup`) es **idempotente y no destructivo**: agrega solo los servicios y profesionales del seed que no existen (por id) y los horarios si la tabla está vacía. **No pisa** precios, nombres, duraciones, activo/inactivo ni quién hace qué, y no toca turnos: se puede correr contra la base de un cliente. Un servicio o profesional del seed **eliminado** desde el panel vuelve a aparecer (uno desactivado queda desactivado); un día sin horario es un día cerrado, por eso los horarios no se completan si ya hay alguno.
+
+`npm run db:seed:reset` (`tsx prisma/seed.ts --reset`) **borra todo** (turnos, historial, servicios, profesionales, horarios) y vuelve a cargar el seed. Solo para desarrollo o la demo.
 
 ### Base de datos
 
@@ -123,7 +161,9 @@ Las horas se manejan en hora de Buenos Aires (UTC-3, sin horario de verano) y se
 
 ## Calidad (19-11-2026, local)
 
-`npm test`: 26 tests (reglas puras + API de punta a punta contra una SQLite temporal con las migraciones y el seed reales). Además se probó con Playwright (Chromium headless), en modo Express y en la demo estática: reservar, gestionar (identificar, cambiar servicio/día/horario, cancelar), y en el panel alta de profesional y servicio, cambio de precio, turno manual con conflicto y "Guardar igual", edición con historial, cancelar, eliminar y bajas bloqueadas; todo reflejado en el sitio y sin errores de consola. Los números de Lighthouse de abajo son de antes de estos cambios.
+`npm test`: 50 tests (reglas puras, SEO/JSON-LD y API de punta a punta contra una SQLite temporal con las migraciones y el seed reales: frenos por IP, honeypot, tiempo mínimo, tope por clienta, freno del panel, `TRUST_PROXY`/`CF-Connecting-IP`, seed idempotente y `--reset`). Además se probó con Playwright (Chromium headless), en modo Express y en la demo estática: reservar, gestionar (identificar, cambiar servicio/día/horario, cancelar), y en el panel alta de profesional y servicio, cambio de precio, turno manual con conflicto y "Guardar igual", edición con historial, cancelar, eliminar y bajas bloqueadas; todo reflejado en el sitio y sin errores de consola. Los números de Lighthouse de abajo son de antes de estos cambios.
+
+Hardening (19-11-2026): Playwright (Chromium headless) en Express con una base temporal — reserva normal OK, honeypot y envío en < 4 s rechazados, 429 al pasar el tope por IP (y un `X-Forwarded-For` falso no lo saltea), 5 claves malas → 429 aun con la correcta, canonical + JSON-LD presentes y el JSON-LD (también el HTML sin JS) con el precio nuevo después de cambiarlo en el panel — y en la demo estática de `scripts/build-pages.sh` (canonical de github.io, JSON-LD, reserva, honeypot, Gestionar mi turno, tope por clienta, panel y cambio de precio visible en el sitio), sin errores de consola.
 
 Lighthouse 13.6.0 (reportes en `docs/lighthouse/`):
 

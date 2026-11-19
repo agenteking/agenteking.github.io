@@ -1,20 +1,26 @@
 // API Express de punta a punta contra una base SQLite temporal (migraciones + seed reales).
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { MAX_ACTIVE_PER_CONTACT } from "../shared/rules.js";
+import { limits, parseTrustProxy } from "../server/src/rate-limit.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dir = mkdtempSync(path.join(tmpdir(), "selkis-test-"));
 process.env.DATABASE_URL = `file:${path.join(dir, "test.db")}`;
 process.env.ADMIN_KEY = "clave-test";
+// Como detrás de cloudflared: el test es el "proxy" local y manda X-Forwarded-For, así cada grupo de tests
+// tiene su IP y los frenos (por IP) no se pisan entre sí.
+process.env.TRUST_PROXY = "loopback";
 
 let base = "";
 let close: () => Promise<void> = async () => {};
+let hasSsr = false;
 
 /** Próximo martes a viernes, al menos 2 días adelante (YYYY-MM-DD, hora BA). */
 function nextWeekday(skip = 0) {
@@ -29,15 +35,32 @@ function nextWeekday(skip = 0) {
 const DAY = nextWeekday();
 const DAY2 = nextWeekday(1);
 
-async function call(method: string, url: string, body?: unknown, admin = false) {
-  const res = await fetch(base + url, {
+const ip = "203.0.113.1";
+
+async function call(
+  method: string,
+  url: string,
+  body?: unknown,
+  admin: boolean | string = false,
+  opts: { ip?: string; headers?: Record<string, string>; base?: string } = {},
+) {
+  const key = admin === true ? "clave-test" : admin || undefined;
+  const res = await fetch((opts.base ?? base) + url, {
     method,
-    headers: { "Content-Type": "application/json", ...(admin ? { "x-admin-key": "clave-test" } : {}) },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Forwarded-For": opts.ip ?? ip,
+      ...(key ? { "x-admin-key": key } : {}),
+      ...opts.headers,
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await res.text();
-  return { status: res.status, body: text ? JSON.parse(text) : null };
+  return { status: res.status, headers: res.headers, body: text ? JSON.parse(text) : null };
 }
+
+/** Reserva online como la manda el front (con el tiempo de llenado). */
+const booking = (b: Record<string, unknown>) => ({ fillMs: 30_000, website: "", ...b });
 
 before(async () => {
   const env = { ...process.env };
@@ -45,7 +68,9 @@ before(async () => {
   execFileSync("npx", ["prisma", "db", "seed"], { cwd: root, env, stdio: "ignore" });
   const { createApp } = await import("../server/src/app.js");
   const { prisma } = await import("../server/src/db.js");
-  const server = createApp().app.listen(0);
+  const created = createApp();
+  hasSsr = existsSync(path.join(root, "dist/ssr/template.html")) && created.hasWeb;
+  const server = created.app.listen(0);
   await new Promise((r) => server.once("listening", r));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   close = async () => {
@@ -63,22 +88,26 @@ describe("reserva y Gestionar mi turno", () => {
   let code = "";
 
   it("reserva online", async () => {
-    const r = await call("POST", "/api/bookings", {
-      serviceId: "kapping-gel",
-      professionalId: "pro-a",
-      date: DAY,
-      time: "10:00",
-      name: "Ana Test",
-      phone: "11 2222-3333",
-      email: "ana@test.com",
-    });
+    const r = await call(
+      "POST",
+      "/api/bookings",
+      booking({
+        serviceId: "kapping-gel",
+        professionalId: "pro-a",
+        date: DAY,
+        time: "10:00",
+        name: "Ana Test",
+        phone: "11 2222-3333",
+        email: "ana@test.com",
+      }),
+    );
     assert.equal(r.status, 201);
     code = r.body.code;
     assert.match(code, /^SLK-[0-9A-F]{6}$/);
   });
 
   it("valida en castellano", async () => {
-    const r = await call("POST", "/api/bookings", { serviceId: "kapping-gel", date: DAY, time: "10:00", name: "A", phone: "1", email: "x" });
+    const r = await call("POST", "/api/bookings", booking({ serviceId: "kapping-gel", date: DAY, time: "10:00", name: "A", phone: "1", email: "x" }));
     assert.equal(r.status, 400);
     assert.equal(r.body.issues.phone[0], "Teléfono inválido");
     assert.equal(r.body.issues.email[0], "Email inválido");
@@ -108,15 +137,19 @@ describe("reserva y Gestionar mi turno", () => {
 
   it("cambia servicio, día y horario (y no pisa otro turno)", async () => {
     // Otro turno de pro-a el DAY2 a las 15:00.
-    await call("POST", "/api/bookings", {
-      serviceId: "semi-manos",
-      professionalId: "pro-a",
-      date: DAY2,
-      time: "15:00",
-      name: "Otra",
-      phone: "1199998888",
-      email: "otra@test.com",
-    });
+    await call(
+      "POST",
+      "/api/bookings",
+      booking({
+        serviceId: "semi-manos",
+        professionalId: "pro-a",
+        date: DAY2,
+        time: "15:00",
+        name: "Otra",
+        phone: "1199998888",
+        email: "otra@test.com",
+      }),
+    );
     const clash = await call("PUT", "/api/my-booking", {
       code,
       contact: "1122223333",
@@ -150,7 +183,130 @@ describe("reserva y Gestionar mi turno", () => {
   });
 });
 
+describe("frenos de la reserva online", () => {
+  const body = (time: string, extra: Record<string, unknown> = {}) =>
+    booking({ serviceId: "semi-manos", professionalId: "pro-b", date: DAY, time, name: "Bea Bot", phone: "11 4444-5555", email: "bea@test.com", ...extra });
+
+  it("honeypot completo → 400 bot_suspected, sin guardar nada", async () => {
+    const r = await call("POST", "/api/bookings", body("09:00", { website: "https://spam.example" }), false, { ip: "198.51.100.10" });
+    assert.equal(r.status, 400);
+    assert.equal(r.body.error, "bot_suspected");
+    const list = await call("GET", `/api/admin/bookings?from=${DAY}&to=${DAY}&professionalId=pro-b`, undefined, true, { ip: "198.51.100.99" });
+    assert.equal(list.body.bookings.length, 0);
+  });
+
+  it("formulario completado demasiado rápido (o sin el tiempo) → rechazado", async () => {
+    const fast = await call("POST", "/api/bookings", body("09:00", { fillMs: 800 }), false, { ip: "198.51.100.10" });
+    assert.equal(fast.status, 400);
+    assert.equal(fast.body.error, "bot_suspected");
+    const { fillMs: _omit, ...noTime } = body("09:00");
+    const missing = await call("POST", "/api/bookings", noTime, false, { ip: "198.51.100.10" });
+    assert.equal(missing.status, 400);
+    assert.ok(missing.body.issues.fillMs);
+  });
+
+  it(`tope de ${MAX_ACTIVE_PER_CONTACT} turnos próximos por celular o email`, async () => {
+    const opts = { ip: "198.51.100.11" };
+    for (const [i, t] of ["09:00", "10:00", "11:00"].entries()) {
+      const r = await call("POST", "/api/bookings", body(t, { phone: i ? "+54 9 11 4444 5555" : "1144445555" }), false, opts);
+      assert.equal(r.status, 201, t);
+    }
+    // Mismo celular (otro formato) y otro email: cuenta igual.
+    const byPhone = await call("POST", "/api/bookings", body("12:00", { phone: "011 15 4444-5555", email: "otra-bea@test.com" }), false, opts);
+    assert.equal(byPhone.status, 409);
+    assert.equal(byPhone.body.error, "too_many_bookings");
+    assert.match(byPhone.body.message, /Gestionar mi turno/);
+    // Mismo email (con mayúsculas) y otro celular: también.
+    const byEmail = await call("POST", "/api/bookings", body("12:00", { phone: "11 7777-8888", email: "BEA@test.com" }), false, opts);
+    assert.equal(byEmail.status, 409);
+    assert.equal(byEmail.body.error, "too_many_bookings");
+    // Si cancela uno, puede sacar otro.
+    const code = (await call("GET", `/api/admin/bookings?from=${DAY}&to=${DAY}&professionalId=pro-b`, undefined, true, { ip: "198.51.100.99" })).body
+      .bookings[0].code;
+    assert.equal((await call("POST", "/api/my-booking/cancel", { code, contact: "1144445555" }, false, opts)).status, 200);
+    assert.equal((await call("POST", "/api/bookings", body("12:00"), false, opts)).status, 201);
+  });
+
+  it(`límite por IP: ${limits.bookings.max} intentos cada 15 min, después 429 con Retry-After`, async () => {
+    const opts = { ip: "198.51.100.12" };
+    for (let i = 0; i < limits.bookings.max; i++) {
+      const r = await call("POST", "/api/bookings", {}, false, opts); // inválidos también cuentan
+      assert.equal(r.status, 400);
+    }
+    const r = await call("POST", "/api/bookings", body("15:00"), false, opts);
+    assert.equal(r.status, 429);
+    assert.equal(r.body.error, "too_many_requests");
+    assert.ok(Number(r.headers.get("retry-after")) > 0);
+    // Otra IP sigue pudiendo.
+    assert.notEqual((await call("POST", "/api/bookings", {}, false, { ip: "198.51.100.13" })).status, 429);
+  });
+});
+
+describe("IP real y trust proxy", () => {
+  it("parseTrustProxy", () => {
+    assert.equal(parseTrustProxy(undefined), false);
+    assert.equal(parseTrustProxy(""), false);
+    assert.equal(parseTrustProxy("false"), false);
+    assert.equal(parseTrustProxy("2"), 2);
+    assert.deepEqual(parseTrustProxy("loopback"), ["loopback"]);
+    assert.deepEqual(parseTrustProxy("10.0.0.1, 10.0.0.0/8"), ["10.0.0.1", "10.0.0.0/8"]);
+  });
+
+  it("sin TRUST_PROXY, X-Forwarded-For y CF-Connecting-IP se ignoran (no se saltea el freno rotando la IP)", async () => {
+    const saved = process.env.TRUST_PROXY;
+    delete process.env.TRUST_PROXY;
+    const { createApp } = await import("../server/src/app.js");
+    const server = createApp().app.listen(0);
+    process.env.TRUST_PROXY = saved;
+    await new Promise((r) => server.once("listening", r));
+    const direct = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    try {
+      for (let i = 0; i < limits.admin.max; i++) {
+        const r = await call("GET", "/api/admin/services", undefined, "mala", {
+          base: direct,
+          ip: `192.0.2.${i}`,
+          headers: { "CF-Connecting-IP": `192.0.2.${100 + i}` },
+        });
+        assert.equal(r.status, 401);
+      }
+      const r = await call("GET", "/api/admin/services", undefined, true, { base: direct, ip: "192.0.2.200" });
+      assert.equal(r.status, 429); // todas contaron para la IP del socket (127.0.0.1)
+    } finally {
+      limits.admin.clear();
+      await new Promise((r) => server.close(r));
+    }
+  });
+
+  it("detrás del proxy de confianza (loopback) se usa CF-Connecting-IP", async () => {
+    for (let i = 0; i < limits.admin.max; i++) {
+      await call("GET", "/api/admin/services", undefined, "mala", { ip: "192.0.2.50", headers: { "CF-Connecting-IP": "192.0.2.51" } });
+    }
+    // Bloqueada la del CF-Connecting-IP, no la del X-Forwarded-For.
+    assert.equal((await call("GET", "/api/admin/services", undefined, true, { headers: { "CF-Connecting-IP": "192.0.2.51" } })).status, 429);
+    assert.equal((await call("GET", "/api/admin/services", undefined, true, { ip: "192.0.2.50" })).status, 200);
+  });
+});
+
 describe("panel admin", () => {
+  it(`clave incorrecta ${limits.admin.max} veces → 429 (aunque después venga la correcta)`, async () => {
+    const opts = { ip: "198.51.100.20" };
+    for (let i = 0; i < limits.admin.max; i++) {
+      const r = await call("GET", "/api/admin/services", undefined, `mala-${i}`, opts);
+      assert.equal(r.status, 401);
+      assert.equal(r.body.message, "Clave de administración incorrecta.");
+    }
+    const blocked = await call("GET", "/api/admin/services", undefined, true, opts);
+    assert.equal(blocked.status, 429);
+    assert.equal(blocked.body.error, "too_many_admin_attempts");
+    assert.match(blocked.body.message, /15 minutos/);
+    assert.ok(Number(blocked.headers.get("retry-after")) > 0);
+    // Otra IP entra normal; y un acierto limpia los fallos previos de esa IP.
+    const other = { ip: "198.51.100.21" };
+    for (let i = 0; i < limits.admin.max - 1; i++) await call("GET", "/api/admin/services", undefined, "mala", other);
+    assert.equal((await call("GET", "/api/admin/services", undefined, true, other)).status, 200);
+    assert.equal((await call("GET", "/api/admin/services", undefined, "mala", other)).status, 401);
+  });
+
   it("pide la clave en todos los endpoints", async () => {
     for (const [m, u] of [
       ["GET", "/api/admin/bookings"],
@@ -159,7 +315,7 @@ describe("panel admin", () => {
       ["DELETE", "/api/admin/services/kapping-gel"],
       ["GET", "/api/bookings"],
     ] as const) {
-      const r = await call(m, u, m === "GET" || m === "DELETE" ? undefined : {});
+      const r = await call(m, u, m === "GET" || m === "DELETE" ? undefined : {}, false, { ip: "198.51.100.30" });
       assert.equal(r.status, 401, `${m} ${u}`);
     }
   });
@@ -212,6 +368,19 @@ describe("panel admin", () => {
     assert.ok(!site.body.services.some((x: { id: string }) => x.id === "laser-piernas"));
     const av = await call("GET", `/api/availability?serviceId=laser-piernas&date=${DAY}`);
     assert.equal(av.status, 404);
+  });
+
+  it("el HTML del landing (SSR) trae canonical y JSON-LD con los datos vivos", async (t) => {
+    if (!hasSsr) return t.skip("sin dist/ssr: corré npm run build");
+    const html = await (await fetch(`${base}/`)).text();
+    assert.match(html, /<link rel="canonical" href="http:\/\/localhost:\d+\/" \/>/);
+    const m = html.match(/<script type="application\/ld\+json">(.*?)<\/script>/s);
+    assert.ok(m, "falta el JSON-LD");
+    const graph = JSON.parse(m[1]!)["@graph"];
+    const biz = graph.find((n: { "@type": unknown }) => Array.isArray(n["@type"]) && n["@type"].includes("BeautySalon"));
+    const kapping = biz.hasOfferCatalog.itemListElement.find((o: { itemOffered: { name: string } }) => o.itemOffered.name === "Kapping gel");
+    assert.equal(kapping.price, 26500); // el precio que se cambió desde el panel
+    assert.ok(!biz.hasOfferCatalog.itemListElement.some((o: { itemOffered: { name: string } }) => o.itemOffered.name.startsWith("Láser")));
   });
 
   let bookingId = "";
@@ -274,5 +443,47 @@ describe("panel admin", () => {
     assert.equal(r.status, 409);
     assert.equal(r.body.error, "has_history");
     assert.match(r.body.message, /desactivalo/);
+  });
+});
+
+describe("seed", () => {
+  const run = (...args: string[]) =>
+    execFileSync("npx", ["tsx", "prisma/seed.ts", ...args], { cwd: root, env: { ...process.env }, encoding: "utf8" });
+  const opts = { ip: "198.51.100.40" };
+
+  it("re-seedear no pisa lo editado desde el panel (precio, inactiva) ni toca turnos", async () => {
+    const before = await call("GET", "/api/admin/bookings", undefined, true, opts);
+    await call("PUT", "/api/admin/services/perfilado-cejas", {
+      name: "Perfilado premium", category: "Cejas & pestañas", description: "", durationMin: 45, priceFrom: 15500, active: true,
+    }, true, opts);
+    const out = run();
+    assert.match(out, /agregados 0 servicios, 0 profesionales y 0 días/);
+    const services = (await call("GET", "/api/admin/services", undefined, true, opts)).body.services;
+    const cejas = services.find((x: { id: string }) => x.id === "perfilado-cejas");
+    assert.equal(cejas.priceFrom, 15500);
+    assert.equal(cejas.name, "Perfilado premium");
+    assert.equal(cejas.durationMin, 45);
+    assert.equal(services.find((x: { id: string }) => x.id === "kapping-gel").priceFrom, 26500);
+    const pros = (await call("GET", "/api/admin/professionals", undefined, true, opts)).body.professionals;
+    assert.equal(pros.find((x: { id: string }) => x.id === "pro-c").active, false);
+    const after = await call("GET", "/api/admin/bookings", undefined, true, opts);
+    assert.equal(after.body.bookings.length, before.body.bookings.length);
+  });
+
+  it("agrega solo lo que falta", async () => {
+    const del = await call("DELETE", "/api/admin/services/laser-zona-chica", undefined, true, opts);
+    assert.equal(del.status, 204);
+    assert.match(run(), /agregados 1 servicios/);
+    const services = (await call("GET", "/api/admin/services", undefined, true, opts)).body.services;
+    assert.equal(services.find((x: { id: string }) => x.id === "laser-zona-chica").priceFrom, 15000);
+  });
+
+  it("--reset borra todo y vuelve al seed", async () => {
+    assert.match(run("--reset"), /--reset: borrados \d+ turnos/);
+    const services = (await call("GET", "/api/admin/services", undefined, true, opts)).body.services;
+    assert.equal(services.find((x: { id: string }) => x.id === "kapping-gel").priceFrom, 24000);
+    assert.equal((await call("GET", "/api/admin/bookings", undefined, true, opts)).body.bookings.length, 0);
+    const site = await call("GET", "/api/services", undefined, false, opts);
+    assert.ok(site.body.professionals.some((x: { id: string }) => x.id === "pro-c"));
   });
 });
