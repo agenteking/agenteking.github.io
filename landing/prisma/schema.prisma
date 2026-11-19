@@ -1,0 +1,30 @@
+// Landing de la agencia: consultas del formulario de contacto.
+// Prisma 7: cliente generado en TS + driver adapter (better-sqlite3).
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../server/src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+/// Consulta que llega desde el formulario. Solo lo mínimo para responder (Ley 25.326).
+model Lead {
+  id        String   @id @default(cuid())
+  name      String
+  business  String
+  rubro     String?
+  barrio    String?
+  phone     String?
+  email     String?
+  message   String?
+  plan      String? // light | standard | pro | nose
+  status    String   @default("nuevo") // nuevo | respondido | descartado
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
