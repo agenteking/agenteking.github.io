@@ -58,10 +58,16 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return body;
 }
 
+/** Demo estática (GitHub Pages): sin backend, todo se resuelve en el navegador (ver demo-api.ts). */
+export const STATIC_DEMO = import.meta.env.VITE_STATIC_DEMO === "1";
+const demo = () => import("./demo-api");
+
 let servicesCache: Promise<{ services: Service[]; hours: BusinessHour[] }> | null = null;
-export const getServices = () => (servicesCache ??= req("/api/services"));
+export const getServices = () =>
+  (servicesCache ??= STATIC_DEMO ? demo().then((m) => m.getServices()) : req("/api/services"));
 
 export const getAvailability = (serviceId: string, date: string, professionalId?: string) => {
+  if (STATIC_DEMO) return demo().then((m) => m.getAvailability(serviceId, date, professionalId));
   const q = new URLSearchParams({ serviceId, date });
   if (professionalId) q.set("professionalId", professionalId);
   return req<{ slots: Slot[]; closed: boolean; durationMin: number }>(`/api/availability?${q}`);
@@ -75,13 +81,20 @@ export const createBooking = (data: {
   name: string;
   phone: string;
   email: string;
-}) => req<Booking>("/api/bookings", { method: "POST", body: JSON.stringify(data) });
+}) =>
+  STATIC_DEMO
+    ? demo().then((m) => m.createBooking(data))
+    : req<Booking>("/api/bookings", { method: "POST", body: JSON.stringify(data) });
 
 export const listBookings = (key: string) =>
-  req<{ bookings: Booking[] }>("/api/bookings?status=all", { headers: { "x-admin-key": key } });
+  STATIC_DEMO
+    ? demo().then((m) => m.listBookings(key))
+    : req<{ bookings: Booking[] }>("/api/bookings?status=all", { headers: { "x-admin-key": key } });
 
 export const cancelBooking = (key: string, id: string) =>
-  req<Booking>(`/api/bookings/${encodeURIComponent(id)}/cancel`, { method: "POST", headers: { "x-admin-key": key } });
+  STATIC_DEMO
+    ? demo().then((m) => m.cancelBooking(key, id))
+    : req<Booking>(`/api/bookings/${encodeURIComponent(id)}/cancel`, { method: "POST", headers: { "x-admin-key": key } });
 
 export const formatARS = (n: number) =>
   new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n);

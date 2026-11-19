@@ -9,7 +9,8 @@ import { App } from "./App";
 const Admin = lazy(() => import("./admin/Admin"));
 
 const el = document.getElementById("root")!;
-const isAdmin = window.location.pathname.replace(/\/$/, "") === "/admin";
+// El panel vive en <base>admin (con Express "/admin"; en GitHub Pages "/<landing>/admin/").
+const isAdmin = window.location.pathname.replace(/\/$/, "") === `${import.meta.env.BASE_URL}admin`;
 
 if (isAdmin) {
   el.innerHTML = "";

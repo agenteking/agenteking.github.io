@@ -132,7 +132,7 @@ api.post("/bookings", async (req, res) => {
 
 // ---- Panel admin (header x-admin-key) ----
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const expected = Buffer.from(process.env.ADMIN_KEY ?? "selkis-demo-2026");
+  const expected = Buffer.from(process.env.ADMIN_KEY ?? "cambiame");
   const given = Buffer.from(String(req.get("x-admin-key") ?? ""));
   if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
     res.status(401).json({ error: "unauthorized" });

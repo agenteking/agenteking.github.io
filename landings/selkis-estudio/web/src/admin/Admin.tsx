@@ -1,7 +1,7 @@
 import "@radix-ui/themes/styles.css";
 import { AlertDialog, Badge, Button, Callout, Card, Flex, Heading, SegmentedControl, Table, Text, TextField, Theme } from "@radix-ui/themes";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { ApiError, cancelBooking, listBookings, type Booking } from "../api";
+import { ApiError, STATIC_DEMO, cancelBooking, listBookings, type Booking } from "../api";
 
 const STORAGE = "selkis-admin-key";
 
@@ -67,7 +67,7 @@ export default function Admin() {
             </Text>
           </div>
           <Button variant="soft" color="gray" asChild>
-            <a href="/">Ver sitio</a>
+            <a href={import.meta.env.BASE_URL}>Ver sitio</a>
           </Button>
         </Flex>
 
@@ -88,7 +88,9 @@ export default function Admin() {
                   Entrar
                 </Button>
                 <Text size="1" color="gray">
-                  Demo: la clave por defecto está en el README (variable ADMIN_KEY).
+                  {STATIC_DEMO
+                    ? "Demo: entrás con cualquier clave. Los turnos quedan guardados solo en este navegador."
+                    : "Demo: la clave por defecto está en el README (variable ADMIN_KEY)."}
                 </Text>
               </Flex>
             </form>

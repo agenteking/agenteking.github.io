@@ -60,7 +60,11 @@ npm run db:seed             # re-seed (idempotente)
 | GET | `/api/bookings?status=all\|confirmed\|cancelled&from=YYYY-MM-DD` | **Admin**: header `x-admin-key` |
 | POST | `/api/bookings/:id/cancel` | **Admin**: cancela y libera el horario |
 
-**Clave admin de demo: `selkis-demo-2026`.** Es el default de `ADMIN_KEY` en `.env`; cambiala en producción. El panel está en `/admin`.
+**Clave admin:** la variable `ADMIN_KEY` del `.env` (en `.env.example` viene `cambiame`: poné una propia). El panel está en `/admin`.
+
+### Demo estática (GitHub Pages)
+
+`VITE_STATIC_DEMO=1 BASE_PATH=/selkis-estudio/ npm run build:web` arma un sitio 100 % estático en `dist/web`: la API se simula en el navegador (`web/src/demo-api.ts`, mismos servicios, horarios y reglas de turnos que el server) y los turnos se guardan en `localStorage`. El panel queda en `<base>admin/` y en esa demo entra con **cualquier clave no vacía**. Sin `VITE_STATIC_DEMO` todo funciona igual que antes, contra Express.
 
 Las horas se manejan en hora de Buenos Aires (UTC-3, sin horario de verano) y se guardan en UTC.
 

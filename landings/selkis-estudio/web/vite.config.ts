@@ -3,9 +3,12 @@ import { defineConfig } from "vite";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
+// Ruta pública del sitio: "/" con Express (default); "/<carpeta>/" en GitHub Pages (BASE_PATH=/<carpeta>/).
+const base = `/${(process.env.BASE_PATH ?? "").replace(/^\/+|\/+$/g, "")}/`.replace(/^\/\/$/, "/");
 
 export default defineConfig({
   root,
+  base,
   plugins: [react()],
   build: {
     outDir: fileURLToPath(new URL("../dist/web", import.meta.url)),
