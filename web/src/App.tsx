@@ -8,6 +8,7 @@ import {
   NAV,
   PACKAGES,
   PRINCIPLES,
+  TEAM,
   PROBLEMS,
   QUERIES,
   SMALL_BENEFITS,
@@ -110,19 +111,17 @@ function Hero() {
         <p className="pill">
           <span className="pill__dot" aria-hidden />
           <span>
-            Webs con turnos y pedidos online<span className="hide-sm"> para comercios y profesionales</span>
+            Diseño de webs<span className="hide-sm"> para comercios y profesionales</span>
           </span>
         </p>
         <h1>
-          Que te encuentren.
+          Tu negocio en una web
           <br />
-          <span className="accent">Que te elijan.</span>
-          <br />
-          Que te reserven.
+          <span className="accent">que transmite quién sos.</span>
         </h1>
         <p className="hero__lead">
-          Tu web con tu propia marca, turnos o pedidos online, y lista para aparecer en Google y en las respuestas de la
-          IA. Te la mostramos armada antes de que pagues nada.
+          Diseñamos webs lindas, hechas a medida, que reflejan tu estilo y comunican lo que querés transmitir, a un
+          costo mínimo. Te la mostramos armada antes de que pagues nada.
         </p>
         <div className="hero__ctas">
           <a href="#contacto" className="btn btn--primary btn--lg">
@@ -136,12 +135,6 @@ function Hero() {
             </a>
           ) : null}
         </div>
-        <p className="hero__trust">
-          <Sparkle width={16} height={16} />
-          <span>
-            Equipo con trayectoria en la industria del software, en empresas como <b>Facebook</b> y <b>Microsoft</b>.
-          </span>
-        </p>
       </div>
       <div className="container container--wide">
         <HeroStage />
@@ -390,14 +383,14 @@ function Packages() {
           title={<span id="paquetes-title">Tres formas de arrancar. Precio cerrado, sin sorpresas.</span>}
           lead={
             SHOW_PRICES
-              ? "Precios orientativos en pesos. Te pasamos el número final, por escrito, después de ver tu caso."
+              ? "Precios orientativos en pesos, válidos hasta el 31/12/2026. Te pasamos el número final, por escrito, después de ver tu caso."
               : "Cada negocio es distinto: te pasamos el precio exacto, por escrito, en la primera charla. Sin costos por hora ni letra chica."
           }
         />
         <div className="plans">
           {PACKAGES.map((p) => (
             <article key={p.id} className={`plan reveal${p.featured ? " plan--featured" : ""}`}>
-              {p.featured ? <span className="plan__flag">El más elegido para turnos</span> : null}
+              {p.featured ? <span className="plan__flag">La más elegida</span> : null}
               <h3 className="plan__name">{p.name}</h3>
               <p className="plan__tagline">{p.tagline}</p>
               {SHOW_PRICES ? (
@@ -494,23 +487,26 @@ function About() {
     <section className="section section--tint" id="nosotros" aria-labelledby="nosotros-title">
       <div className="container about">
         <div className="about__copy reveal">
-          <p className="eyebrow">Nosotros</p>
+          <p className="eyebrow">Quiénes somos</p>
           <h2 id="nosotros-title">
-            Experiencia de Big Tech, <span className="accent">para el negocio de la esquina.</span>
+            Dos profesionales de sistemas, <span className="accent">para el negocio de la esquina.</span>
           </h2>
           <p className="lead">
-            Somos un equipo de Buenos Aires con trayectoria en la industria del software, en empresas como Facebook y
-            Microsoft. Ahí aprendimos a hacer productos rápidos, simples y que funcionan para muchísima gente.
+            Somos dos profesionales de sistemas que formamos una empresa dedicada a ayudar a pequeños comercios y
+            profesionales a tener más exposición, a un bajo costo.
           </p>
+          <ul className="team">
+            {TEAM.map((m) => (
+              <li key={m.name} className="team__member reveal">
+                <h3>{m.name}</h3>
+                <p>{m.text}</p>
+              </li>
+            ))}
+          </ul>
           <p>
             Hoy usamos esa experiencia para algo que nos importa: que la peluquería, el consultorio o la dietética de tu
             barrio tengan la misma visibilidad que una gran marca.
           </p>
-          <ul className="about__exp" aria-label="Experiencia previa del equipo">
-            <li>Facebook</li>
-            <li>Microsoft</li>
-            <li>Software a medida</li>
-          </ul>
         </div>
         <div className="about__side">
           <blockquote className="mission reveal">
@@ -628,7 +624,7 @@ function Footer() {
       <div className="container footer__inner">
         <div className="footer__brand">
           <Logo />
-          <p>Webs con turnos y pedidos para comercios y profesionales. Hecho en Buenos Aires.</p>
+          <p>Diseño de webs para comercios y profesionales. Hecho en Buenos Aires.</p>
         </div>
         <nav aria-label="Pie de página" className="footer__links">
           {NAV.map((n) => (

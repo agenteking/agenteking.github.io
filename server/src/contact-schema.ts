@@ -12,7 +12,7 @@ const optionalText = (max: number) =>
     .optional()
     .transform((v) => (v ? v : undefined));
 
-export const PLANS = ["vidriera", "turnos", "tranqui", "nose"] as const;
+export const PLANS = ["light", "standard", "pro", "nose"] as const;
 export type Plan = (typeof PLANS)[number];
 
 const emailCheck = z.email();

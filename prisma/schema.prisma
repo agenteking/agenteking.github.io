@@ -22,7 +22,7 @@ model Lead {
   phone     String?
   email     String?
   message   String?
-  plan      String? // vidriera | turnos | tranqui | nose
+  plan      String? // light | standard | pro | nose
   status    String   @default("nuevo") // nuevo | respondido | descartado
   createdAt DateTime @default(now())
 

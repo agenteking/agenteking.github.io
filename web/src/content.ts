@@ -60,6 +60,11 @@ export const PROBLEMS = [
     text: "La gente nueva no busca tu @. Busca “pilates en Palermo” o “veterinaria abierta hoy”. Y elige entre los que aparecen.",
     icon: "search",
   },
+  {
+    title: "Las apps de turnos no cuentan quién sos.",
+    text: "Son la misma plantilla para todos: una agenda con tu nombre arriba. Ninguna refleja lo que realmente transmite tu negocio.",
+    icon: "brand",
+  },
 ] as const;
 
 export const GEO_POINTS = [
@@ -112,43 +117,43 @@ export const STEPS = [
 ] as const;
 
 export interface Package {
-  id: "vidriera" | "turnos" | "tranqui";
+  id: "light" | "standard" | "pro";
   name: string;
   tagline: string;
   forWho: string;
   features: string[];
   featured?: boolean;
-  /** Orientativos (propuesta sugerida, a validar por los socios). Solo se muestran con VITE_SHOW_PRICES=1. */
+  /** Orientativos (propuesta de los socios). Solo se muestran con VITE_SHOW_PRICES=1. */
   priceFrom: string;
   monthlyFrom: string;
 }
 
-/** El más completo primero (anclaje) y el del medio recomendado. */
+/** De la más barata a la más cara; la del medio, recomendada. */
 export const PACKAGES: Package[] = [
   {
-    id: "tranqui",
-    name: "Tranqui",
-    tagline: "Todo resuelto, todos los meses.",
-    forWho: "Para el que no quiere ocuparse nunca más de la web.",
+    id: "light",
+    name: "Versión Light",
+    tagline: "Tu web, linda y a medida.",
+    forWho: "Para el que quiere estar y que lo encuentren.",
     features: [
-      "Todo lo de Turnos",
-      "Seña online al reservar",
-      "Recordatorios por WhatsApp",
-      "Gift cards y pedido de reseñas",
-      "2 cambios por mes (precios, fotos, promos)",
-      "Reporte mensual de visitas y reservas",
+      "Diseño de la web a medida, con tu dominio",
+      "Exposición en Google (SEO local)",
+      "Exposición para la IA (ChatGPT, Gemini…)",
+      "Botón de WhatsApp, mapa y horarios",
+      "Ficha de Google completa y optimizada",
+      "Mantenimiento mínimo mensual: hosting y 1 cambio por mes",
     ],
-    priceFrom: "$590.000",
-    monthlyFrom: "$69.900",
+    priceFrom: "$250.000",
+    monthlyFrom: "$25.000",
   },
   {
-    id: "turnos",
-    name: "Turnos",
-    tagline: "Tu web + reservas online.",
+    id: "standard",
+    name: "Versión Standard",
+    tagline: "Tu web + reserva de turnos.",
     forWho: "Para el que vive de turnos o pedidos.",
     features: [
-      "Todo lo de Vidriera",
-      "Reservas con calendario y horarios reales",
+      "Todo lo de la versión Light",
+      "Reserva de turnos con calendario y horarios reales",
       "Catálogo o menú editable",
       "Avisos de cada reserva por mail o WhatsApp",
       "Panel simple para ver y cancelar turnos",
@@ -158,19 +163,20 @@ export const PACKAGES: Package[] = [
     monthlyFrom: "$39.900",
   },
   {
-    id: "vidriera",
-    name: "Vidriera",
-    tagline: "Tu casa propia en internet.",
-    forWho: "Para el que quiere estar y que lo encuentren.",
+    id: "pro",
+    name: "Versión Pro",
+    tagline: "Todo resuelto, todos los meses.",
+    forWho: "Para el que no quiere ocuparse nunca más de la web.",
     features: [
-      "Web a medida con tu dominio",
-      "Botón de WhatsApp, mapa y horarios",
-      "Ficha de Google completa y optimizada",
-      "Datos estructurados para Google y la IA",
-      "Hosting y 1 cambio por mes",
+      "Todo lo de la versión Standard",
+      "Seña online al reservar",
+      "Recordatorios por WhatsApp",
+      "Gift cards y pedido de reseñas",
+      "2 cambios por mes (precios, fotos, promos)",
+      "Reporte mensual de visitas y reservas",
     ],
-    priceFrom: "$250.000",
-    monthlyFrom: "$25.000",
+    priceFrom: "$590.000",
+    monthlyFrom: "$69.900",
   },
 ];
 
@@ -191,10 +197,15 @@ export const PRINCIPLES = [
   { title: "Lo tuyo es tuyo", text: "Dominio, web y datos a tu nombre. Si un día te vas, te llevás todo." },
 ] as const;
 
+export const TEAM = [
+  { name: "Gonzalo", text: "Trabajó en empresas como Facebook y Microsoft." },
+  { name: "Brian", text: "Trabajó en empresas como Southworks, Trimble y Nosis." },
+] as const;
+
 export const FAQ = [
   {
     q: "¿Cuánto sale?",
-    a: "Depende de lo que necesites: una web vidriera, una con turnos o pedidos, o todo resuelto con abono mensual. Siempre es precio cerrado y por escrito, sin costos por hora. Escribinos y en la primera charla te pasamos el número exacto para tu caso.",
+    a: "Depende de lo que necesites: la versión Light (tu web), la Standard (web + turnos) o la Pro. Siempre es precio cerrado y por escrito, sin costos por hora. Escribinos y en la primera charla te pasamos el número exacto para tu caso.",
   },
   {
     q: "¿Tengo que pagar antes de ver algo?",
@@ -239,12 +250,12 @@ export const NAV = [
   { href: "#ejemplo", label: "Ejemplo" },
   { href: "#proceso", label: "Cómo trabajamos" },
   { href: "#paquetes", label: "Paquetes" },
-  { href: "#nosotros", label: "Nosotros" },
+  { href: "#nosotros", label: "Quiénes somos" },
   { href: "#faq", label: "Preguntas" },
 ] as const;
 
 export const SEO = {
-  title: `${BRAND_NAME} · Webs con turnos y pedidos para comercios y profesionales`,
+  title: `${BRAND_NAME} · Diseño de webs para comercios y profesionales`,
   description:
-    "Hacemos webs premium para comercios y profesionales de barrio, con turnos y pedidos online. Que te encuentren en Google y que la IA te recomiende, con tu propia marca. Te mostramos tu web antes de pagar.",
+    "Diseñamos webs lindas y a medida para comercios y profesionales, que reflejan lo que tu negocio quiere transmitir, a un costo mínimo. Con SEO y lista para la IA. Te mostramos tu web antes de pagar.",
 };
