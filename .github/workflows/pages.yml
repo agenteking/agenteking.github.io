@@ -20,9 +20,9 @@ jobs:
     env:
       # VITE_* de landing/ (valores de landing/.env.example, sin secretos), salvo precios y link a la demo.
       VITE_BRAND_NAME: Aparece
-      VITE_SITE_URL: https://aparece.com.ar
-      VITE_CONTACT_EMAIL: hola@aparece.com.ar
-      VITE_WHATSAPP: "5491100000000"
+      VITE_SITE_URL: https://agenteking.github.io
+      VITE_CONTACT_EMAIL: agente.kingk@gmail.com
+      VITE_WHATSAPP: ""
       VITE_NOINDEX: "1"
       VITE_SHOW_PRICES: "1"
       VITE_DEMO_URL: /selkis-estudio/
