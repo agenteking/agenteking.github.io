@@ -22,6 +22,8 @@ Todo sale de variables `VITE_*` en `.env` (ver `.env.example`), leídas por `web
 | `VITE_NOINDEX` | `1` = `<meta robots noindex>` (demo). `0` al publicar |
 | `VITE_SHOW_PRICES` | `1` = muestra precios "desde" orientativos en los paquetes |
 | `VITE_DEMO_URL` | Link opcional "Ver la demo andando" en el caso de ejemplo |
+| `VITE_STATIC_DEMO` | `1` = build estático sin backend (GitHub Pages): el formulario abre WhatsApp (o un mail si no hay `VITE_WHATSAPP`) con los datos cargados, en vez de `POST /api/contact` |
+| `BASE_PATH` | Ruta pública del build (default `/`) |
 | `NOINDEX` (runtime) | `1` = `X-Robots-Tag: noindex` + `robots.txt` con `Disallow: /`. `0` al publicar (robots con `Sitemap:`) |
 
 Después de cambiar algo: `npm run build` y reiniciar. Para regenerar la imagen OG con el nombre nuevo:

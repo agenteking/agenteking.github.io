@@ -17,6 +17,8 @@ export const NOINDEX: boolean = env.VITE_NOINDEX !== "0";
 export const SHOW_PRICES: boolean = env.VITE_SHOW_PRICES === "1";
 /** Link opcional a la demo navegable del caso de ejemplo. */
 export const DEMO_URL: string = env.VITE_DEMO_URL || "";
+/** Build estático sin backend (GitHub Pages): el formulario abre WhatsApp o un mail en vez de POST /api/contact. */
+export const STATIC_DEMO: boolean = env.VITE_STATIC_DEMO === "1";
 
 export const CITY = "Buenos Aires";
 

@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import { WHATSAPP, waLink } from "../config";
+import { BRAND_NAME, CONTACT_EMAIL, STATIC_DEMO, WHATSAPP, waLink } from "../config";
 import { ArrowRight, Check } from "./Icons";
 
 type Status = "idle" | "sending" | "ok" | "error";
@@ -12,6 +12,36 @@ const PLAN_OPTIONS = [
 ];
 
 export const PICK_PLAN_EVENT = "pick-plan";
+
+/** Texto de la consulta para WhatsApp / email (demo estática, sin backend). */
+function contactText(raw: Record<string, string>): string {
+  const plan = PLAN_OPTIONS.find((o) => o.value === raw.plan)?.label;
+  const lines = [
+    `Hola ${BRAND_NAME}! Soy ${raw.name}, de ${raw.business}.`,
+    raw.rubro || raw.barrio ? [raw.rubro, raw.barrio].filter(Boolean).join(" · ") : "",
+    plan ? `Me interesa: ${plan}` : "",
+    raw.phone ? `WhatsApp: ${raw.phone}` : "",
+    raw.email ? `Email: ${raw.email}` : "",
+    raw.message ? `\n${raw.message}` : "",
+  ];
+  return lines.filter(Boolean).join("\n");
+}
+
+/** Sin backend (GitHub Pages): abre WhatsApp si hay número; si no, un mail prellenado. */
+function sendWithoutBackend(raw: Record<string, string>) {
+  if (raw.website) return; // honeypot: como el server, lo damos por enviado sin hacer nada
+  const text = contactText(raw);
+  if (WHATSAPP) {
+    const link = waLink(text);
+    // Sin "noopener" en features: con ese flag window.open devuelve null siempre y no sabríamos si lo bloquearon.
+    const w = window.open(link, "_blank");
+    if (w) w.opener = null;
+    else window.location.href = link; // popup bloqueado: vamos en la misma pestaña
+    return;
+  }
+  const subject = `Consulta web: ${raw.business}`;
+  window.location.href = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`;
+}
 
 export function ContactForm() {
   const uid = useId();
@@ -54,6 +84,13 @@ export function ContactForm() {
       return;
     }
     setErrors({});
+    if (STATIC_DEMO) {
+      sendWithoutBackend(raw);
+      setStatus("ok");
+      formRef.current?.reset();
+      setPlan("nose");
+      return;
+    }
     setStatus("sending");
     setServerMsg("");
     try {

@@ -8,6 +8,8 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const webDir = `${root}dist/web`;
 const indexPath = `${webDir}/index.html`;
 const ssrDir = `${root}dist/ssr`;
+// Misma base que web/vite.config.ts (BASE_PATH; "/" por defecto).
+const base = `/${(process.env.BASE_PATH ?? "").replace(/^\/+|\/+$/g, "")}/`.replace(/^\/\/$/, "/");
 
 const { render, headTags, sitemapXml, BRAND_NAME } = await import(pathToFileURL(`${ssrDir}/entry-server.js`).href);
 let html = await readFile(indexPath, "utf8");
@@ -17,14 +19,14 @@ const assets = await readdir(`${webDir}/assets`);
 const fonts = [/^geist-latin-wght-normal-.*\.woff2$/]
   .map((re) => assets.find((a) => re.test(a)))
   .filter(Boolean)
-  .map((f) => `<link rel="preload" as="font" type="font/woff2" href="/assets/${f}" crossorigin />`);
+  .map((f) => `<link rel="preload" as="font" type="font/woff2" href="${base}assets/${f}" crossorigin />`);
 
 if (!html.includes("<!--app-head-->")) throw new Error("No encontré <!--app-head--> en index.html");
 html = html.replace("<!--app-head-->", [headTags(), ...fonts].join("\n    "));
 
 // CSS inline: es chico (~8 KB gz) y así no bloquea el primer render con un request extra.
 for (const css of assets.filter((a) => /^index-.*\.css$/.test(a))) {
-  const tag = new RegExp(`<link rel="stylesheet"[^>]*href="/assets/${css.replace(/[.]/g, "\\.")}"[^>]*>`);
+  const tag = new RegExp(`<link rel="stylesheet"[^>]*href="${base.replace(/[.]/g, "\\.")}assets/${css.replace(/[.]/g, "\\.")}"[^>]*>`);
   if (!tag.test(html)) continue;
   const content = await readFile(`${webDir}/assets/${css}`, "utf8");
   html = html.replace(tag, () => `<style>${content}</style>`);
