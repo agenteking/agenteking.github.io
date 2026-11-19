@@ -6,9 +6,9 @@ type Status = "idle" | "sending" | "ok" | "error";
 
 const PLAN_OPTIONS = [
   { value: "nose", label: "Todavía no sé" },
-  { value: "light", label: "Versión Light: mi web, linda y a medida" },
-  { value: "standard", label: "Versión Standard: web + reserva de turnos" },
-  { value: "pro", label: "Versión Pro: todo resuelto, todos los meses" },
+  { value: "light", label: "Light: mi web, linda y a medida" },
+  { value: "standard", label: "Standard: web + reserva de turnos" },
+  { value: "pro", label: "Pro: todo resuelto, todos los meses" },
 ];
 
 export const PICK_PLAN_EVENT = "pick-plan";

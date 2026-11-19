@@ -132,7 +132,7 @@ export interface Package {
 export const PACKAGES: Package[] = [
   {
     id: "light",
-    name: "Versión Light",
+    name: "Light",
     tagline: "Tu web, linda y a medida.",
     forWho: "Para el que quiere estar y que lo encuentren.",
     features: [
@@ -148,11 +148,11 @@ export const PACKAGES: Package[] = [
   },
   {
     id: "standard",
-    name: "Versión Standard",
+    name: "Standard",
     tagline: "Tu web + reserva de turnos.",
     forWho: "Para el que vive de turnos o pedidos.",
     features: [
-      "Todo lo de la versión Light",
+      "Todo lo de Light",
       "Reserva de turnos con calendario y horarios reales",
       "Catálogo o menú editable",
       "Avisos de cada reserva por mail o WhatsApp",
@@ -164,11 +164,11 @@ export const PACKAGES: Package[] = [
   },
   {
     id: "pro",
-    name: "Versión Pro",
+    name: "Pro",
     tagline: "Todo resuelto, todos los meses.",
     forWho: "Para el que no quiere ocuparse nunca más de la web.",
     features: [
-      "Todo lo de la versión Standard",
+      "Todo lo de Standard",
       "Seña online al reservar",
       "Recordatorios por WhatsApp",
       "Gift cards y pedido de reseñas",
@@ -205,7 +205,7 @@ export const TEAM = [
 export const FAQ = [
   {
     q: "¿Cuánto sale?",
-    a: "Depende de lo que necesites: la versión Light (tu web), la Standard (web + turnos) o la Pro. Siempre es precio cerrado y por escrito, sin costos por hora. Escribinos y en la primera charla te pasamos el número exacto para tu caso.",
+    a: "Depende de lo que necesites: Light (tu web), Standard (web + turnos) o Pro. Siempre es precio cerrado y por escrito, sin costos por hora. Escribinos y en la primera charla te pasamos el número exacto para tu caso.",
   },
   {
     q: "¿Tengo que pagar antes de ver algo?",
