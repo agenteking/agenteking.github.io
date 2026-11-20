@@ -3,7 +3,9 @@
 #   landing/             → /            (base "/")
 #   landings/<carpeta>/  → /<carpeta>/  (base "/<carpeta>/"), una por cada carpeta con package.json
 # backoffice/ NO se incluye nunca (es interno, con login y datos reales): no lo agregues acá.
-# Todo se buildea en modo demo estática (VITE_STATIC_DEMO=1): sin backend, sin /api.
+# Por defecto cada landing se buildea en modo demo estática (VITE_STATIC_DEMO=1): sin backend, sin /api.
+# Si la landing tiene un pages.env (público, sin secretos) con VITE_API_BASE, se buildea contra esa API
+# real (p. ej. la Edge Function de Supabase de selkis-estudio) y sin VITE_STATIC_DEMO.
 # Las VITE_* de la landing (marca, contacto, precios…) se toman del entorno (ver .github/workflows/pages.yml).
 #
 # Uso local:  scripts/build-pages.sh            (npm ci solo si falta node_modules)
@@ -27,7 +29,16 @@ build_web() {
     cd "$dir"
     install_deps
     # Solo el front: el build:web no necesita prisma generate ni el tsc del server.
-    VITE_STATIC_DEMO=1 BASE_PATH="$base" npm run build:web
+    local api_base=""
+    if [[ -f pages.env ]]; then
+      api_base="$(sed -n 's/^VITE_API_BASE=//p' pages.env | tail -1 | tr -d "\"'\r")"
+    fi
+    if [[ -n "$api_base" ]]; then
+      echo "    API real: $api_base"
+      VITE_API_BASE="$api_base" BASE_PATH="$base" npm run build:web
+    else
+      VITE_STATIC_DEMO=1 BASE_PATH="$base" npm run build:web
+    fi
   )
   mkdir -p "$dest"
   cp -R "$dir/dist/web/." "$dest/"

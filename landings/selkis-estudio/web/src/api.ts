@@ -1,5 +1,9 @@
-// Cliente de la API. Con VITE_STATIC_DEMO=1 (GitHub Pages) las mismas llamadas las resuelve
-// demo-api.ts en el navegador (localStorage), con las mismas reglas y los mismos errores.
+// Cliente de la API. Tres modos según el build:
+//   - default: misma origen, /api/… (Express sirve front + API).
+//   - VITE_API_BASE=https://<ref>.supabase.co/functions/v1/selkis: front estático (GitHub Pages) contra la
+//     API real en la Edge Function de Supabase (<base>/api/…, con CORS).
+//   - VITE_STATIC_DEMO=1: sin backend; demo-api.ts resuelve todo en el navegador (localStorage), con las
+//     mismas reglas y los mismos errores. Tiene prioridad sobre VITE_API_BASE.
 import type {
   AdminProfessional,
   AdminService,
@@ -69,11 +73,14 @@ export interface Backend {
   adminDeleteProfessional(key: string, id: string): Promise<void>;
 }
 
+/** Origen de la API (sin barra final): vacío = mismo origen que el sitio. */
+export const API_BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/+$/, "");
+
 async function req<T>(path: string, init: RequestInit & { key?: string; json?: unknown } = {}): Promise<T> {
   const { key, json, ...rest } = init;
   let res: Response;
   try {
-    res = await fetch(path, {
+    res = await fetch(API_BASE + path, {
       ...rest,
       body: json === undefined ? rest.body : JSON.stringify(json),
       headers: { "Content-Type": "application/json", ...(key ? { "x-admin-key": key } : {}), ...rest.headers },
@@ -123,7 +130,7 @@ export const STATIC_DEMO = import.meta.env.VITE_STATIC_DEMO === "1";
 const backend = (): Promise<Backend> =>
   STATIC_DEMO ? import("./demo-api").then((m) => m.demoBackend) : Promise.resolve(http);
 
-/** Mismas funciones que `Backend`, apuntando a Express o a la demo según el build. */
+/** Mismas funciones que `Backend`, apuntando a la API (Express o Supabase) o a la demo según el build. */
 export const api = Object.fromEntries(
   (Object.keys(http) as (keyof Backend)[]).map((k) => [
     k,
