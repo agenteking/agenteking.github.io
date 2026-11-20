@@ -9,9 +9,9 @@ import {
   placementConflicts,
   uniqueSlug,
   type BusyBooking,
-} from "../shared/rules.js";
-import { SEED_HOURS } from "../shared/seed-data.js";
-import { localToDate } from "../shared/time.js";
+} from "../shared/rules.ts";
+import { SEED_HOURS } from "../shared/seed-data.ts";
+import { localToDate } from "../shared/time.ts";
 
 // Miércoles 2026-12-02, 09:00–19:00. "Ahora" = el lunes anterior, así la anticipación no molesta.
 const DATE = "2026-12-02";

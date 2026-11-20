@@ -1,15 +1,16 @@
 // Selkis Estudio — demo de turnos online
-// Prisma 7: cliente generado en TS + driver adapter (better-sqlite3).
+// Prisma 7: cliente generado en TS + driver adapter (pg) contra Postgres (Supabase, un schema por cliente:
+// el schema sale de ?schema= en DATABASE_URL o de DB_SCHEMA; ver server/src/db.ts).
 
 generator client {
   provider            = "prisma-client"
   output              = "../server/src/generated/prisma"
   moduleFormat        = "esm"
-  importFileExtension = "js"
+  importFileExtension = "ts"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 model Service {

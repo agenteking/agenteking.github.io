@@ -1,13 +1,13 @@
 import { Router } from "express";
-import { availabilityQuery, bookingBody } from "../../shared/schemas.js";
-import { MAX_ACTIVE_PER_CONTACT, activeForContact, looksLikeBot } from "../../shared/rules.js";
-import { localToDate } from "../../shared/time.js";
-import { admin, cancelBookingHandler, listBookingsHandler, requireAdmin } from "./admin.js";
-import { prisma } from "./db.js";
-import { HttpError, parse } from "./http.js";
-import { manage } from "./manage.js";
-import { clientIp, limits } from "./rate-limit.js";
-import { availability, bookingInclude, describe, logEvent, publicData, serialize, uniqueCode } from "./store.js";
+import { availabilityQuery, bookingBody } from "../../shared/schemas.ts";
+import { MAX_ACTIVE_PER_CONTACT, activeForContact, looksLikeBot } from "../../shared/rules.ts";
+import { localToDate } from "../../shared/time.ts";
+import { admin, cancelBookingHandler, listBookingsHandler, requireAdmin } from "./admin.ts";
+import { prisma } from "./db.ts";
+import { HttpError, parse } from "./http.ts";
+import { manage } from "./manage.ts";
+import { clientIp, limits } from "./rate-limit.ts";
+import { availability, bookingInclude, describe, lockAgenda, logEvent, publicData, serialize, uniqueCode } from "./store.ts";
 
 export const api = Router();
 
@@ -42,9 +42,10 @@ api.post("/bookings", async (req, res) => {
   if (!d) return;
   // Honeypot + tiempo mínimo de llenado (sin captcha). No se guarda nada.
   if (looksLikeBot(d)) throw new HttpError(400, "bot_suspected");
-  // Chequeo + alta en la misma transacción: SQLite serializa las escrituras, así que dos
-  // reservas simultáneas al mismo horario no pueden pasar las dos.
+  // Chequeo + alta en la misma transacción, bajo el lock de la agenda: dos reservas simultáneas al
+  // mismo horario no pueden pasar las dos.
   const booking = await prisma.$transaction(async (tx) => {
+    await lockAgenda(tx);
     const avail = await availability(tx, d);
     const slot = avail.slots.find((s) => s.time === d.time);
     if (!slot) throw new HttpError(409, "slot_unavailable");

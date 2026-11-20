@@ -1,18 +1,24 @@
-// API Express de punta a punta contra una base SQLite temporal (migraciones + seed reales).
+// API Express de punta a punta contra Postgres (Supabase): un schema de test (TEST_DATABASE_URL, …?schema=selkis_test)
+// que se borra y se recrea al arrancar, con las migraciones y el seed reales.
+import "dotenv/config";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync } from "node:fs";
 import type { AddressInfo } from "node:net";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { MAX_ACTIVE_PER_CONTACT } from "../shared/rules.js";
-import { limits, parseTrustProxy } from "../server/src/rate-limit.js";
+import pg from "pg";
+import { MAX_ACTIVE_PER_CONTACT } from "../shared/rules.ts";
+import { limits, parseTrustProxy } from "../server/src/rate-limit.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const dir = mkdtempSync(path.join(tmpdir(), "selkis-test-"));
-process.env.DATABASE_URL = `file:${path.join(dir, "test.db")}`;
+const testUrl = process.env.TEST_DATABASE_URL;
+if (!testUrl) throw new Error("Falta TEST_DATABASE_URL (postgresql://…?schema=selkis_test): ver README → Tests.");
+const testSchema = new URL(testUrl).searchParams.get("schema") ?? "";
+// El schema se BORRA entero: nunca contra el de la demo ni public.
+if (!/^[a-z0-9_]+_test$/.test(testSchema)) throw new Error(`TEST_DATABASE_URL: el schema tiene que terminar en _test (vino "${testSchema}").`);
+process.env.DATABASE_URL = testUrl;
 process.env.ADMIN_KEY = "clave-test";
 // Como detrás de cloudflared: el test es el "proxy" local y manda X-Forwarded-For, así cada grupo de tests
 // tiene su IP y los frenos (por IP) no se pisan entre sí.
@@ -62,15 +68,39 @@ async function call(
 /** Reserva online como la manda el front (con el tiempo de llenado). */
 const booking = (b: Record<string, unknown>) => ({ fillMs: 30_000, website: "", ...b });
 
+/** Borra el schema de test (conexión aparte, sin el ?schema= que pg no entiende); migrate deploy lo recrea. */
+async function resetSchema() {
+  const u = new URL(testUrl!);
+  u.searchParams.delete("schema");
+  const local = ["localhost", "127.0.0.1"].includes(u.hostname);
+  const client = new pg.Client({ connectionString: u.toString(), ssl: local ? undefined : { rejectUnauthorized: false } });
+  await client.connect();
+  try {
+    await client.query(`DROP SCHEMA IF EXISTS "${testSchema}" CASCADE`);
+  } finally {
+    await client.end();
+  }
+}
+
 before(async () => {
+  await resetSchema();
   const env = { ...process.env };
-  execFileSync("npx", ["prisma", "migrate", "deploy"], { cwd: root, env, stdio: "ignore" });
-  execFileSync("npx", ["prisma", "db", "seed"], { cwd: root, env, stdio: "ignore" });
-  const { createApp } = await import("../server/src/app.js");
-  const { prisma } = await import("../server/src/db.js");
+  for (const args of [["prisma", "migrate", "deploy"], ["prisma", "db", "seed"]]) {
+    try {
+      execFileSync("npx", args, { cwd: root, env, encoding: "utf8", stdio: "pipe" });
+    } catch (e) {
+      const { stdout, stderr } = e as { stdout?: string; stderr?: string };
+      throw new Error(`npx ${args.join(" ")} falló:\n${stdout ?? ""}\n${stderr ?? ""}`);
+    }
+  }
+  const { createApp } = await import("../server/src/app.ts");
+  const { prisma } = await import("../server/src/db.ts");
   const created = createApp();
   hasSsr = existsSync(path.join(root, "dist/ssr/template.html")) && created.hasWeb;
   const server = created.app.listen(0);
+  // Los tests del seed bloquean el event loop varios segundos (execFileSync contra la base remota): sin esto,
+  // el server cierra por keep-alive (5 s) una conexión que fetch está por reusar → ECONNRESET.
+  server.keepAliveTimeout = 120_000;
   await new Promise((r) => server.once("listening", r));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   close = async () => {
@@ -81,7 +111,6 @@ before(async () => {
 
 after(async () => {
   await close();
-  rmSync(dir, { recursive: true, force: true });
 });
 
 describe("reserva y Gestionar mi turno", () => {
@@ -242,6 +271,25 @@ describe("frenos de la reserva online", () => {
   });
 });
 
+describe("concurrencia (Postgres)", () => {
+  it("dos reservas simultáneas al mismo horario: entra una sola", async () => {
+    const r = await Promise.all(
+      ["Uno", "Dos", "Tres"].map((name, i) =>
+        call(
+          "POST",
+          "/api/bookings",
+          booking({ serviceId: "semi-manos", professionalId: "pro-b", date: DAY2, time: "16:00", name: `Carrera ${name}`, phone: `11 6000-000${i}`, email: `carrera${i}@test.com` }),
+          false,
+          { ip: `198.51.100.5${i}` },
+        ),
+      ),
+    );
+    assert.deepEqual(r.map((x) => x.status).sort(), [201, 409, 409]);
+    const list = await call("GET", `/api/admin/bookings?from=${DAY2}&to=${DAY2}&professionalId=pro-b`, undefined, true, { ip: "198.51.100.59" });
+    assert.equal(list.body.bookings.filter((b: { time: string }) => b.time === "16:00").length, 1);
+  });
+});
+
 describe("IP real y trust proxy", () => {
   it("parseTrustProxy", () => {
     assert.equal(parseTrustProxy(undefined), false);
@@ -255,7 +303,7 @@ describe("IP real y trust proxy", () => {
   it("sin TRUST_PROXY, X-Forwarded-For y CF-Connecting-IP se ignoran (no se saltea el freno rotando la IP)", async () => {
     const saved = process.env.TRUST_PROXY;
     delete process.env.TRUST_PROXY;
-    const { createApp } = await import("../server/src/app.js");
+    const { createApp } = await import("../server/src/app.ts");
     const server = createApp().app.listen(0);
     process.env.TRUST_PROXY = saved;
     await new Promise((r) => server.once("listening", r));
@@ -443,6 +491,65 @@ describe("panel admin", () => {
     assert.equal(r.status, 409);
     assert.equal(r.body.error, "has_history");
     assert.match(r.body.message, /desactivalo/);
+  });
+});
+
+describe("Edge Function (API sola, como en Supabase)", () => {
+  let edge = "";
+  let stop: () => Promise<void> = async () => {};
+  const gh = "https://agenteking.github.io";
+
+  before(async () => {
+    const { createEdgeApp } = await import("../server/src/edge.ts");
+    const server = createEdgeApp({}).listen(0);
+    await new Promise((r) => server.once("listening", r));
+    edge = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    stop = () => new Promise((r) => server.close(() => r()));
+  });
+  after(async () => {
+    limits.admin.clear();
+    await stop();
+  });
+
+  it("responde con el prefijo de la función (/selkis/api) y sin él (/api)", async () => {
+    for (const u of ["/selkis/api/services", "/api/services"]) {
+      const r = await call("GET", u, undefined, false, { base: edge });
+      assert.equal(r.status, 200, u);
+      assert.ok(r.body.services.length > 0);
+    }
+    assert.equal((await call("GET", "/selkis/api/nada", undefined, false, { base: edge })).status, 404);
+    assert.equal((await call("GET", "/selkis/", undefined, false, { base: edge })).status, 404);
+  });
+
+  it("CORS: preflight de GitHub Pages con x-admin-key; otro origen no recibe permiso", async () => {
+    const pre = await fetch(`${edge}/selkis/api/admin/bookings/x`, {
+      method: "OPTIONS",
+      headers: { Origin: gh, "Access-Control-Request-Method": "PUT", "Access-Control-Request-Headers": "content-type,x-admin-key" },
+    });
+    assert.equal(pre.status, 204);
+    assert.equal(pre.headers.get("access-control-allow-origin"), gh);
+    assert.match(pre.headers.get("access-control-allow-headers") ?? "", /x-admin-key/i);
+    for (const m of ["GET", "POST", "PUT", "DELETE"]) assert.match(pre.headers.get("access-control-allow-methods") ?? "", new RegExp(m));
+    const get = await call("GET", "/selkis/api/services", undefined, false, { base: edge, headers: { Origin: gh } });
+    assert.equal(get.headers.get("access-control-allow-origin"), gh);
+    assert.match(get.headers.get("vary") ?? "", /Origin/);
+    const dev = await call("GET", "/selkis/api/health", undefined, false, { base: edge, headers: { Origin: "http://localhost:5173" } });
+    assert.equal(dev.headers.get("access-control-allow-origin"), "http://localhost:5173");
+    const evil = await fetch(`${edge}/selkis/api/services`, {
+      method: "OPTIONS",
+      headers: { Origin: "https://evil.example", "Access-Control-Request-Method": "POST" },
+    });
+    assert.equal(evil.headers.get("access-control-allow-origin"), null);
+    assert.equal(evil.headers.get("access-control-allow-headers"), null);
+  });
+
+  it("la IP de los frenos sale de CF-Connecting-IP (la pone el gateway de Supabase)", async () => {
+    const opts = (cf: string, i = 0) => ({ base: edge, ip: `10.9.9.${i}`, headers: { "CF-Connecting-IP": cf } });
+    for (let i = 0; i < limits.admin.max; i++) {
+      assert.equal((await call("GET", "/selkis/api/admin/services", undefined, "mala", opts("192.0.2.77", i))).status, 401);
+    }
+    assert.equal((await call("GET", "/selkis/api/admin/services", undefined, true, opts("192.0.2.77", 99))).status, 429);
+    assert.equal((await call("GET", "/selkis/api/admin/services", undefined, true, opts("192.0.2.78"))).status, 200);
   });
 });
 

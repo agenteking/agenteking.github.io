@@ -1,5 +1,5 @@
 // Mensajes de error de la API (los mismos en Express y en la demo estática).
-import { MAX_ACTIVE_PER_CONTACT } from "./rules.js";
+import { MAX_ACTIVE_PER_CONTACT } from "./rules.ts";
 
 export const MSG = {
   invalid_body: "Revisá los datos marcados.",

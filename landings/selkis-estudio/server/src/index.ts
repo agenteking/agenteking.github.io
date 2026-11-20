@@ -1,6 +1,6 @@
 import "dotenv/config";
-import { createApp } from "./app.js";
-import { prisma } from "./db.js";
+import { createApp } from "./app.ts";
+import { prisma } from "./db.ts";
 
 const { app, hasWeb } = createApp();
 

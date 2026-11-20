@@ -1,14 +1,14 @@
 // "Gestionar mi turno": la clienta se identifica con el código de reserva + el teléfono o el email
 // con el que reservó. Todo va por POST/PUT con body JSON (el contacto no queda en URLs ni logs).
 import { Router, type Request } from "express";
-import { canCustomerChange, contactMatches, normalizeCode } from "../../shared/rules.js";
-import { manageAuth, manageAvailability, manageChange, type ManageAuth } from "../../shared/schemas.js";
-import { localToDate } from "../../shared/time.js";
-import type { MyBooking } from "../../shared/types.js";
-import { prisma } from "./db.js";
-import { HttpError, parse } from "./http.js";
-import { clientIp, limits } from "./rate-limit.js";
-import { availability, bookingInclude, describe, logEvent, serialize, type Db } from "./store.js";
+import { canCustomerChange, contactMatches, normalizeCode } from "../../shared/rules.ts";
+import { manageAuth, manageAvailability, manageChange, type ManageAuth } from "../../shared/schemas.ts";
+import { localToDate } from "../../shared/time.ts";
+import type { MyBooking } from "../../shared/types.ts";
+import { prisma } from "./db.ts";
+import { HttpError, parse } from "./http.ts";
+import { clientIp, limits } from "./rate-limit.ts";
+import { availability, bookingInclude, describe, lockAgenda, logEvent, serialize, type Db } from "./store.ts";
 
 export const manage = Router();
 
@@ -62,6 +62,7 @@ manage.put("/", async (req, res) => {
   const d = parse(manageChange, req.body, res);
   if (!d) return;
   const updated = await prisma.$transaction(async (tx) => {
+    await lockAgenda(tx);
     const b = await findOwned(tx, req, d);
     assertChangeable(b);
     const avail = await availability(tx, { ...d, excludeBookingId: b.id });

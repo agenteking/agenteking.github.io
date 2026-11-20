@@ -1,7 +1,7 @@
-import type { Response } from "express";
+import type { NextFunction, Request, Response } from "express";
 import type { z } from "zod";
-import { MSG, type ErrorCode } from "../../shared/messages.js";
-import { fieldIssues } from "../../shared/schemas.js";
+import { MSG, type ErrorCode } from "../../shared/messages.ts";
+import { fieldIssues } from "../../shared/schemas.ts";
 
 /** Error con status HTTP: se puede tirar desde cualquier handler (o transacción) y lo responde app.ts. */
 export class HttpError extends Error {
@@ -31,4 +31,20 @@ export function parse<T extends z.ZodType>(
     return undefined;
   }
   return r.data;
+}
+
+/** Manejador de errores de Express (va al final de la app): HttpError, body inválido y el resto como 500. */
+export function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction) {
+  if (err instanceof HttpError) {
+    sendError(res, err.status, err.code, err.extra);
+    return;
+  }
+  // JSON mal formado o demasiado grande (body-parser).
+  const status = (err as { status?: number }).status;
+  if (status === 400 || status === 413) {
+    sendError(res, status, "invalid_body");
+    return;
+  }
+  console.error(err);
+  sendError(res, 500, "internal_error");
 }

@@ -2,11 +2,11 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import compression from "compression";
-import express, { type NextFunction, type Request, type Response } from "express";
-import { HttpError, sendError } from "./http.js";
-import { parseTrustProxy } from "./rate-limit.js";
-import { api } from "./routes.js";
-import { createSsr } from "./ssr.js";
+import express from "express";
+import { mountApi, securityHeaders } from "./api-app.ts";
+import { errorHandler } from "./http.ts";
+import { parseTrustProxy } from "./rate-limit.ts";
+import { createSsr } from "./ssr.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // Raíz del proyecto: server/src (dev, tsx) o dist/server/server/src (build).
@@ -25,21 +25,8 @@ export function createApp() {
   // y saltea los frenos). Detrás de un proxy/túnel en la misma máquina (cloudflared): TRUST_PROXY=loopback.
   app.set("trust proxy", parseTrustProxy(process.env.TRUST_PROXY));
   app.use(compression({ threshold: 512 })); // gzip / brotli según Accept-Encoding
-  app.use(express.json({ limit: "20kb" }));
-
-  app.use((_req, res, next) => {
-    res.set({
-      "X-Content-Type-Options": "nosniff",
-      "Referrer-Policy": "strict-origin-when-cross-origin",
-      "X-Frame-Options": "SAMEORIGIN",
-    });
-    next();
-  });
-
-  app.use("/api", api);
-  app.use("/api", (_req, res) => {
-    sendError(res, 404, "not_found");
-  });
+  app.use(securityHeaders);
+  mountApi(app, ["/api"]);
 
   if (hasWeb) {
     // Assets con hash en el nombre: cache de un año, inmutables.
@@ -66,20 +53,7 @@ export function createApp() {
     });
   }
 
-  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    if (err instanceof HttpError) {
-      sendError(res, err.status, err.code, err.extra);
-      return;
-    }
-    // JSON mal formado o demasiado grande (body-parser).
-    const status = (err as { status?: number }).status;
-    if (status === 400 || status === 413) {
-      sendError(res, status, "invalid_body");
-      return;
-    }
-    console.error(err);
-    sendError(res, 500, "internal_error");
-  });
+  app.use(errorHandler);
 
   return { app, hasWeb };
 }

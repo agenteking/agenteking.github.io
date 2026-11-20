@@ -1,14 +1,14 @@
 // Panel admin: ABM de turnos, servicios y profesionales. Todo /api/admin pide el header x-admin-key.
 import { createHash, timingSafeEqual } from "node:crypto";
 import { Router, type NextFunction, type Request, type Response } from "express";
-import { placementConflicts, uniqueSlug } from "../../shared/rules.js";
-import { adminBookingBody, adminBookingQuery, professionalBody, serviceBody } from "../../shared/schemas.js";
-import { localToDate } from "../../shared/time.js";
-import type { AdminProfessional, AdminService, BookingEvent, BookingWithHistory } from "../../shared/types.js";
-import { prisma } from "./db.js";
-import { HttpError, parse, sendError } from "./http.js";
-import { clientIp, limits } from "./rate-limit.js";
-import { bookingInclude, bumpCatalog, busyFor, describe, getHours, logEvent, serialize, uniqueCode, type Db } from "./store.js";
+import { placementConflicts, uniqueSlug } from "../../shared/rules.ts";
+import { adminBookingBody, adminBookingQuery, professionalBody, serviceBody } from "../../shared/schemas.ts";
+import { localToDate } from "../../shared/time.ts";
+import type { AdminProfessional, AdminService, BookingEvent, BookingWithHistory } from "../../shared/types.ts";
+import { prisma } from "./db.ts";
+import { HttpError, parse, sendError } from "./http.ts";
+import { clientIp, limits } from "./rate-limit.ts";
+import { bookingInclude, bumpCatalog, busyFor, describe, getHours, lockAgenda, logEvent, serialize, uniqueCode, type Db } from "./store.ts";
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest();
 
@@ -132,6 +132,7 @@ admin.post("/bookings", async (req, res) => {
   if (!d) return;
   const status = d.status ?? "confirmed";
   const created = await prisma.$transaction(async (tx) => {
+    await lockAgenda(tx);
     const { start, end, conflicts } = await checkPlacement(tx, d);
     if (status === "confirmed" && conflicts.length > 0 && !d.force) throw new HttpError(409, "conflicts", { conflicts });
     const b = await tx.booking.create({
@@ -161,6 +162,7 @@ admin.put("/bookings/:id", async (req, res) => {
   const d = parse(adminBookingBody, req.body, res);
   if (!d) return;
   const updated = await prisma.$transaction(async (tx) => {
+    await lockAgenda(tx);
     const b = await tx.booking.findUnique({ where: { id: idParam(req) }, include: bookingInclude });
     if (!b) throw new HttpError(404, "not_found");
     const status = d.status ?? b.status;

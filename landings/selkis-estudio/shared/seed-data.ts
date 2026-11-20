@@ -3,7 +3,7 @@
 //   - web/src/demo-api.ts (la demo estática, que los copia a localStorage),
 //   - el prerender del landing (scripts/prerender.mjs vía web/src/entry-server.tsx).
 // Precios ORIENTATIVOS de muestra: Selkis no publica lista de precios; confirmar con el estudio.
-import type { PublicData } from "./types.js";
+import type { PublicData } from "./types.ts";
 
 export interface SeedService {
   id: string;

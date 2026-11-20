@@ -1,6 +1,6 @@
 // Reglas de la agenda, puras (sin base de datos): las usan el server y la demo estática.
-import type { BusinessHour, Conflict, Slot } from "./types.js";
-import { hhmmToMin, localToDate, minToHHMM, toLocalDate, toLocalHHMM, weekdayOf } from "./time.js";
+import type { BusinessHour, Conflict, Slot } from "./types.ts";
+import { hhmmToMin, localToDate, minToHHMM, toLocalDate, toLocalHHMM, weekdayOf } from "./time.ts";
 
 export const SLOT_STEP_MIN = 30;
 /** Anticipación mínima para reservar, cambiar o cancelar online. */

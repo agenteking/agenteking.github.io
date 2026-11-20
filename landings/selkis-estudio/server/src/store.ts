@@ -1,14 +1,24 @@
 // Acceso a datos compartido por las rutas públicas, "Gestionar mi turno" y el panel admin.
 import { randomBytes } from "node:crypto";
-import { computeSlots, type BusyBooking } from "../../shared/rules.js";
-import { dayRange } from "../../shared/rules.js";
-import { toLocalDate, toLocalHHMM } from "../../shared/time.js";
-import type { Booking, BookingEvent, BookingSource, BookingStatus, PublicData } from "../../shared/types.js";
-import { prisma } from "./db.js";
-import type { Prisma } from "./generated/prisma/client.js";
-import { HttpError } from "./http.js";
+import { computeSlots, type BusyBooking } from "../../shared/rules.ts";
+import { dayRange } from "../../shared/rules.ts";
+import { toLocalDate, toLocalHHMM } from "../../shared/time.ts";
+import type { Booking, BookingEvent, BookingSource, BookingStatus, PublicData } from "../../shared/types.ts";
+import { prisma } from "./db.ts";
+import type { Prisma } from "./generated/prisma/client.ts";
+import { HttpError } from "./http.ts";
 
 export type Db = typeof prisma | Prisma.TransactionClient;
+
+/**
+ * Serializa las altas y movimientos de turnos (el chequeo de horario libre + el alta van en la misma
+ * transacción). Postgres, a diferencia de SQLite, deja correr dos transacciones a la vez: sin este lock
+ * de transacción, dos reservas simultáneas al mismo horario podrían pasar las dos. Se libera solo al
+ * terminar la transacción (sirve también detrás del pooler en modo transacción). Uno por schema/cliente.
+ */
+export async function lockAgenda(tx: Db) {
+  await tx.$queryRaw`SELECT 1 AS ok FROM (SELECT pg_advisory_xact_lock(hashtext(current_schema() || ':agenda'))) AS l`;
+}
 
 export const newCode = () => `SLK-${randomBytes(3).toString("hex").toUpperCase()}`;
 

@@ -12,8 +12,8 @@
 // próximo seed (si solo se desactivó, queda desactivado). Los horarios no vuelven: un día sin fila es
 // un día cerrado, por eso solo se cargan si la tabla está vacía.
 import "dotenv/config";
-import { prisma } from "../server/src/db.js";
-import { SEED_HOURS, SEED_PROFESSIONALS, SEED_SERVICES } from "../shared/seed-data.js";
+import { prisma } from "../server/src/db.ts";
+import { SEED_HOURS, SEED_PROFESSIONALS, SEED_SERVICES } from "../shared/seed-data.ts";
 
 const reset = process.argv.includes("--reset");
 
@@ -58,7 +58,7 @@ async function main() {
       await tx.businessHour.createMany({ data: SEED_HOURS });
       added.hours = SEED_HOURS.length;
     }
-  });
+  }, { timeout: 60_000 }); // ~40 consultas: contra una base remota tarda varios segundos
   console.log(
     `Seed OK: agregados ${added.services} servicios, ${added.professionals} profesionales y ${added.hours} días con horario` +
       (reset ? "." : " (lo que ya estaba no se tocó)."),

@@ -2,13 +2,13 @@
 // Mismo código que usan el prerender (build, con el seed) y el SSR de Express (con la base viva).
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { seedPublicData } from "../shared/seed-data.js";
-import { MIN_FILL_MS, activeForContact, looksLikeBot } from "../shared/rules.js";
-import { localToDate } from "../shared/time.js";
-import type { PublicData } from "../shared/types.js";
-import { business, faqs } from "../web/src/content.js";
-import { canonicalUrl, openingHours, priceRangeOf } from "../web/src/seo.js";
-import { headFor, jsonLdFor } from "../web/src/site-seo.js";
+import { seedPublicData } from "../shared/seed-data.ts";
+import { MIN_FILL_MS, activeForContact, looksLikeBot } from "../shared/rules.ts";
+import { localToDate } from "../shared/time.ts";
+import type { PublicData } from "../shared/types.ts";
+import { business, faqs } from "../web/src/content.ts";
+import { canonicalUrl, openingHours, priceRangeOf } from "../web/src/seo.ts";
+import { headFor, jsonLdFor } from "../web/src/site-seo.ts";
 
 const URL_ = "https://agenteking.github.io/selkis-estudio/";
 

@@ -6,8 +6,8 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { PublicData } from "../../shared/types.js";
-import { getCatalogVersion, publicData } from "./store.js";
+import type { PublicData } from "../../shared/types.ts";
+import { getCatalogVersion, publicData } from "./store.ts";
 
 interface Entry {
   render: (data: PublicData) => string;
